@@ -45,7 +45,7 @@ contract Store {
         string title;
         string description;
         uint256 date;
-        address payable owner;
+        uint256 owner; // EIN owner
         uint256 price;
         string image;
         bytes32[] attributes;
@@ -55,7 +55,7 @@ contract Store {
         uint256 id; // Product ID associated with the order
         uint256 productId;
         uint256 date;
-        address buyer;
+        uint256 buyer; // EIN buyer
         string nameSurname;
         string lineOneDirection;
         string lineTwoDirection;
@@ -71,14 +71,13 @@ contract Store {
         string name;
         bytes32[] skus;
     }
-    // Seller address => products
-    mapping(address => Order[]) public pendingSellerOrders; // The products waiting to be fulfilled by the seller, used by sellers to check which orders have to be filled
-    // Buyer address => products
-    mapping(address => Order[]) public pendingBuyerOrders; // The products that the buyer purchased waiting to be sent
-    mapping(address => Order[]) public completedOrders;
+    // Seller ein => orders
+    mapping(uint256 => Order[]) public pendingOrders; // The products waiting to be fulfilled
+    // Buyer ein => orders
+    mapping(uint256 => Order[]) public completedOrders;
     // Product id => product
     mapping(uint256 => Product) public productById;
-    // Product id => order
+    // Order id => order struct
     mapping(uint256 => Order) public orderById;
     Product[] public products;
     Inventory[] public inventories;
@@ -102,8 +101,9 @@ contract Store {
         require(bytes(_description).length > 0, 'The description cannot be empty');
         require(_price > 0, 'The price cannot be empty');
         require(bytes(_image).length > 0, 'The image cannot be empty');
+        require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to add a product');
 
-        Product memory p = Product(lastId, _sku, _title, _description, now, msg.sender, _price, _image, _attributes, _attributeValues);
+        Product memory p = Product(lastId, _sku, _title, _description, now, IdentityRegistryInterface.getEIN(msg.sender), _price, _image, _attributes, _attributeValues);
         products.push(p);
         productById[lastId] = p;
         lastId++;
@@ -153,11 +153,12 @@ contract Store {
         require(_country > 0, 'The country must be set');
         require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to purchase the product');
 
+        uint256 ein = IdentityRegistryInterface.getEIN(msg.sender);
         Product memory p = productById[_id];
         require(bytes(p.title).length > 0, 'The product must exist to be purchased');
         require(HydroTokenTestnetInterface(token).allowance(msg.sender, address(this)) >= p.price, 'You must have enough HYDRO tokens approved to purchase this product');
 
-        Order memory newOrder = Order(lastOrderId, _id, now, msg.sender, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending');
+        Order memory newOrder = Order(lastOrderId, _id, now, ein, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending');
 
         // Delete the product from the array of products since we only want to purchase one product per order
         for(uint256 i = 0; i < products.length; i++) {
@@ -168,37 +169,31 @@ contract Store {
             }
         }
 
-        pendingSellerOrders[p.owner].push(newOrder);
-        pendingBuyerOrders[msg.sender].push(newOrder);
+        pendingOrders[ein].push(newOrder);
         orderById[_id] = newOrder;
         HydroTokenTestnetInterface(token).transferFrom(msg.sender, address(this), p.price); // Pay the product price
         lastOrderId++;
     }
 
     /// @notice To mark an order as completed
-    /// @param _id The id of the order which is the same for the product id
+    /// @param _id The id of the order to mark as sent and completed
     function markOrderCompleted(uint256 _id) public {
         Order memory order = orderById[_id];
-        Product memory product = productById[_id];
-        require(product.owner == msg.sender, 'Only the seller can mark the order as completed');
+        Product memory product = productById[order.productId];
+        require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to mark the order as completed');
+        uint256 ein = IdentityRegistryInterface.getEIN(msg.sender);
+        require(product.owner == ein, 'Only the seller can mark the order as completed');
         order.state = 'completed';
 
         // Delete the seller order from the array of pending orders
-        for(uint256 i = 0; i < pendingSellerOrders[product.owner].length; i++) {
-            if(pendingSellerOrders[product.owner][i].id == _id) {
-                Order memory lastElement = orderById[pendingSellerOrders[product.owner].length - 1];
-                pendingSellerOrders[product.owner][i] = lastElement;
-                pendingSellerOrders[product.owner].length--;
+        for(uint256 i = 0; i < pendingOrders[product.owner].length; i++) {
+            if(pendingOrders[product.owner][i].id == _id) {
+                Order memory lastElement = orderById[pendingOrders[product.owner].length - 1];
+                pendingOrders[product.owner][i] = lastElement;
+                pendingOrders[product.owner].length--;
             }
         }
-        // Delete the seller order from the array of pending orders
-        for(uint256 i = 0; i < pendingBuyerOrders[order.buyer].length; i++) {
-            if(pendingBuyerOrders[order.buyer][i].id == order.id) {
-                Order memory lastElement = orderById[pendingBuyerOrders[order.buyer].length - 1];
-                pendingBuyerOrders[order.buyer][i] = lastElement;
-                pendingBuyerOrders[order.buyer].length--;
-            }
-        }
+
         completedOrders[order.buyer].push(order);
         orderById[_id] = order;
     }
@@ -214,8 +209,7 @@ contract Store {
     /// @param _owner The owner of those orders
     /// @return uint256 The number of orders to get
     function getOrdersLength(bytes32 _type, address _owner) public view returns(uint256) {
-        if(_type == 'seller') return pendingSellerOrders[_owner].length;
-        else if(_type == 'buyer') return pendingBuyerOrders[_owner].length;
+        if(_type == 'pending') return pendingOrders[_owner].length;
         else if(_type == 'completed') return completedOrders[_owner].length;
     }
 }
