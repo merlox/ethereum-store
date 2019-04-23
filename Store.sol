@@ -1,8 +1,8 @@
 /*
-Create a SKU - assign a unique ID to a product
+DONE Create a SKU - assign a unique ID to a product
 - With ecommerce-dapp contract
 
-Define attributes - define the attributes of the product to store on-chain, such as gender, size, color, materials
+DONE Define attributes - define the attributes of the product to store on-chain, such as gender, size, color, materials
 - Attributes will be stored in an array of bytes32[] and the values will be bytes32[]. If it's a number, you simply convert it to string.
 
 Inventory - add a SKU to a group of other SKUs to form the foundation of inventory management
@@ -33,18 +33,21 @@ Dispute - create a flag on a Snowflake for a disputed order or shipment
 - After a user has purchased a product, he has the option to call the function disputeOrder() while providing a string explaining his situation. An event will be emitted and the seller will be able to call the function counterDisputeOrder() to provide an explanation of the situation. After that, an approved operator will be able to determine how's right. The seller is expected to provide the shipping tracking number.
 */
 
-contract Ecommerce {
+contract Store {
     struct Product {
         uint256 id;
+        bytes32 sku;
         string title;
         string description;
         uint256 date;
         address payable owner;
         uint256 price;
         string image;
+        bytes32[] attributes;
+        bytes32[] attributeValues;
     }
     struct Order {
-        uint256 id;
+        uint256 id; // Product ID associated with the order
         address buyer;
         string nameSurname;
         string lineOneDirection;
@@ -56,6 +59,11 @@ contract Ecommerce {
         uint256 phone;
         string state; // Either 'pending', 'completed'
     }
+    struct Inventory {
+        uint256 id;
+        string name;
+        bytes32[] skus;
+    }
     // Seller address => products
     mapping(address => Order[]) public pendingSellerOrders; // The products waiting to be fulfilled by the seller, used by sellers to check which orders have to be filled
     // Buyer address => products
@@ -66,6 +74,7 @@ contract Ecommerce {
     // Product id => order
     mapping(uint256 => Order) public orderById;
     Product[] public products;
+    Inventory[] public inventories;
     uint256 public lastId;
     address public token;
 
@@ -80,17 +89,40 @@ contract Ecommerce {
     /// @param _description The description of the product
     /// @param _price The price of the product in ETH
     /// @param _image The image URL of the product
-    function publishProduct(string memory _title, string memory _description, uint256 _price, string memory _image) public {
+    function publishProduct(string memory _title, bytes32 _sku, string memory _description, uint256 _price, string memory _image, bytes32[] memory _attributes, bytes32[] _attributeValues) public {
         require(bytes(_title).length > 0, 'The title cannot be empty');
         require(bytes(_description).length > 0, 'The description cannot be empty');
         require(_price > 0, 'The price cannot be empty');
         require(bytes(_image).length > 0, 'The image cannot be empty');
 
-        Product memory p = Product(lastId, _title, _description, now, msg.sender, _price, _image);
+        Product memory p = Product(lastId, _sku, _title, _description, now, msg.sender, _price, _image, _attributes, _attributeValues);
         products.push(p);
         productById[lastId] = p;
         EcommerceToken(token).mint(address(this), lastId); // Create a new token for this product which will be owned by this contract until sold
         lastId++;
+    }
+
+    /// @notice To create an inventory in which to store product skus
+    /// @param _name The name of the inventory
+    /// @param _skus The array of skus to add to the inventory
+    function createInventory(string memory _name, bytes32[] memory _skus) public {
+        require(bytes(_name).length > 0, 'The name must be set');
+        require(_skus.length > 0, 'There must be at least one sku for this inventory');
+        Inventory memory inv = Inventory(inventories.length, _name, _skus);
+        inventories.push(inv);
+    }
+
+    /// @notice To delete an inventory by id
+    /// @param _id The id of the inventory to delete
+    function deleteInventory(uint256 _id) public {
+        // Delete the inventory from the array of inventories
+        for(uint256 i = 0; i < inventories.length; i++) {
+            if(inventories[i].id == _id) {
+                Inventory memory lastElement = inventories[inventories.length - 1];
+                inventories[i] = lastElement;
+                inventories.length--;
+            }
+        }
     }
 
     /// @notice To buy a new product, note that the seller must authorize this contract to manage the token
