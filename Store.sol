@@ -1,3 +1,8 @@
+pragma solidity ^0.5.4;
+
+import './HydroTokenTestnetInterface.sol';
+import './IdentityRegistryInterface.sol';
+
 /*
 DONE Create a SKU - assign a unique ID to a product
 - With ecommerce-dapp contract
@@ -48,6 +53,8 @@ contract Store {
     }
     struct Order {
         uint256 id; // Product ID associated with the order
+        uint256 productId;
+        uint256 date;
         address buyer;
         string nameSurname;
         string lineOneDirection;
@@ -76,6 +83,7 @@ contract Store {
     Product[] public products;
     Inventory[] public inventories;
     uint256 public lastId;
+    uint256 public lastOrderId;
     address public token;
 
     /// @notice To setup the address of the ERC-721 token to use for this contract
@@ -143,10 +151,11 @@ contract Store {
         require(_stateRegion.length > 0, 'The state or region must be set');
         require(_postalCode > 0, 'The postal code must be set');
         require(_country > 0, 'The country must be set');
+        require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to purchase product');
 
         Product memory p = productById[_id];
         require(bytes(p.title).length > 0, 'The product must exist to be purchased');
-        Order memory newOrder = Order(_id, msg.sender, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending');
+        Order memory newOrder = Order(lastOrderId, _id, now, msg.sender, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending');
         require(msg.value >= p.price, "The payment must be larger or equal than the products price");
 
         // Delete the product from the array of products
@@ -165,6 +174,7 @@ contract Store {
         orderById[_id] = newOrder;
         EcommerceToken(token).transferFrom(address(this), msg.sender, _id); // Transfer the product token to the new owner
         p.owner.transfer(p.price);
+        lastOrderId++;
     }
 
     /// @notice To mark an order as completed
