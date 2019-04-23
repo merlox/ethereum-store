@@ -19,10 +19,10 @@ DONE Shipping - define shipping parameters of the SKU or inventory
 Price - define price of the SKU or inventory, accept gift cards and coupons from other Hydro Snowflake smart contracts
 - To be determined
 
-Create Order - create an order, tied to a Snowflake ID of a business and an end-user containing date, SKU info, shipping info
+DONE Create Order - create an order, tied to a Snowflake ID of a business and an end-user containing date, SKU info, shipping info
 - Can be done with ecommerce-dapp + IdentityRegistryInterface.identityExists(ein) +  IdentityRegistryInterface.hasIdentity(address) + IdentityRegistryInterface.getEIN(address)
 
-Create Barcode - create a unique barcode tied to an order
+DONE Create Barcode - create a unique barcode tied to an order
 - Barcode js https://lindell.me/JsBarcode/
 
 Authenticate Purchase - use Hydro Raindrop to confirm a purchase
@@ -51,6 +51,7 @@ contract Store {
         string image;
         bytes32[] attributes;
         bytes32[] attributeValues;
+        uint256 quantity;
     }
     struct Order {
         uint256 id; // Product ID associated with the order
@@ -66,6 +67,7 @@ contract Store {
         bytes32 country;
         uint256 phone;
         string state; // Either 'pending', 'completed'
+        uint256 barcode;
     }
     struct Inventory {
         uint256 id;
@@ -85,11 +87,13 @@ contract Store {
     uint256 public lastId;
     uint256 public lastOrderId;
     address public token;
+    address public identityRegistry;
 
     /// @notice To setup the address of the ERC-721 token to use for this contract
     /// @param _token The token address
-    constructor(address _token) public {
+    constructor(address _token, address _identityRegistry) public {
         token = _token;
+        identityRegistry = _identityRegistry;
     }
 
     /// @notice To publish a product as a seller
@@ -97,14 +101,14 @@ contract Store {
     /// @param _description The description of the product
     /// @param _price The price of the product in ETH
     /// @param _image The image URL of the product
-    function publishProduct(string memory _title, bytes32 _sku, string memory _description, uint256 _price, string memory _image, bytes32[] memory _attributes, bytes32[] _attributeValues) public {
+    function publishProduct(string memory _title, bytes32 _sku, string memory _description, uint256 _price, string memory _image, bytes32[] memory _attributes, bytes32[] _attributeValues, uint256 _quantity) public {
         require(bytes(_title).length > 0, 'The title cannot be empty');
         require(bytes(_description).length > 0, 'The description cannot be empty');
         require(_price > 0, 'The price cannot be empty');
         require(bytes(_image).length > 0, 'The image cannot be empty');
-        require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to add a product');
+        require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to add a product');
 
-        Product memory p = Product(lastId, _sku, _title, _description, now, IdentityRegistryInterface.getEIN(msg.sender), msg.sender, _price, _image, _attributes, _attributeValues);
+        Product memory p = Product(lastId, _sku, _title, _description, now, IdentityRegistryInterface(identityRegistry).getEIN(msg.sender), msg.sender, _price, _image, _attributes, _attributeValues, _quantity);
         products.push(p);
         productById[lastId] = p;
         lastId++;
@@ -144,7 +148,7 @@ contract Store {
     /// @param _country Buyer's country
     /// @param _phone The optional phone number for the shipping company
     /// The payment in HYDRO is made automatically by making a transferFrom after approving the right amount of tokens using the product price
-    function buyProduct(uint256 _id, string memory _nameSurname, string memory _lineOneDirection, string memory _lineTwoDirection, bytes32 _city, bytes32 _stateRegion, uint256 _postalCode, bytes32 _country, uint256 _phone) public {
+    function buyProduct(uint256 _id, string memory _nameSurname, string memory _lineOneDirection, string memory _lineTwoDirection, bytes32 _city, bytes32 _stateRegion, uint256 _postalCode, bytes32 _country, uint256 _phone, uint256 _barcode) public {
         // The line 2 address and phone are optional, the rest are mandatory
         require(bytes(_nameSurname).length > 0, 'The name and surname must be set');
         require(bytes(_lineOneDirection).length > 0, 'The line one direction must be set');
@@ -152,22 +156,13 @@ contract Store {
         require(_stateRegion.length > 0, 'The state or region must be set');
         require(_postalCode > 0, 'The postal code must be set');
         require(_country > 0, 'The country must be set');
-        require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to purchase the product');
+        require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to purchase the product');
 
-        uint256 ein = IdentityRegistryInterface.getEIN(msg.sender);
+        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
         Product memory p = productById[_id];
         require(bytes(p.title).length > 0, 'The product must exist to be purchased');
         require(HydroTokenTestnetInterface(token).allowance(msg.sender, address(this)) >= p.price, 'You must have enough HYDRO tokens approved to purchase this product');
-        Order memory newOrder = Order(lastOrderId, _id, now, ein, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending');
-
-        // Delete the product from the array of products since we only want to purchase one product per order
-        for(uint256 i = 0; i < products.length; i++) {
-            if(products[i].id == _id) {
-                Product memory lastElement = products[products.length - 1];
-                products[i] = lastElement;
-                products.length--;
-            }
-        }
+        Order memory newOrder = Order(lastOrderId, _id, now, ein, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending', _barcode);
 
         pendingOrders[ein].push(newOrder);
         orderById[_id] = newOrder;
@@ -180,8 +175,8 @@ contract Store {
     function markOrderCompleted(uint256 _id) public {
         Order memory order = orderById[_id];
         Product memory product = productById[order.productId];
-        require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to mark the order as completed');
-        uint256 ein = IdentityRegistryInterface.getEIN(msg.sender);
+        require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to mark the order as completed');
+        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
         require(product.einOwner == ein, 'Only the seller can mark the order as completed');
         order.state = 'completed';
 
@@ -196,6 +191,23 @@ contract Store {
 
         completedOrders[order.buyer].push(order);
         orderById[_id] = order;
+    }
+
+    /// @notice To delete a product
+    /// @param _id The id of the product to delete
+    function deleteProduct(uint256 _id) public {
+        require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to delete a product');
+        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
+        require(productById[_id].einOwner == ein, 'You must be the owner to delete the product');
+        delete productById[_id];
+        // Delete the product from the array of products since we only want to purchase one product per order
+        for(uint256 i = 0; i < products.length; i++) {
+            if(products[i].id == _id) {
+                Product memory lastElement = products[products.length - 1];
+                products[i] = lastElement;
+                products.length--;
+            }
+        }
     }
 
     /// @notice Returns the product length
