@@ -5,10 +5,10 @@ DONE Create a SKU - assign a unique ID to a product
 DONE Define attributes - define the attributes of the product to store on-chain, such as gender, size, color, materials
 - Attributes will be stored in an array of bytes32[] and the values will be bytes32[]. If it's a number, you simply convert it to string.
 
-Inventory - add a SKU to a group of other SKUs to form the foundation of inventory management
+DONE Inventory - add a SKU to a group of other SKUs to form the foundation of inventory management
 - Create an inventory struct containing products or use mappings or arrays
 
-Shipping - define shipping parameters of the SKU or inventory
+DONE Shipping - define shipping parameters of the SKU or inventory
 - Create a shipping or order struct by using ecommerce-dapp
 
 Price - define price of the SKU or inventory, accept gift cards and coupons from other Hydro Snowflake smart contracts
