@@ -28,7 +28,7 @@ DONE Create Barcode - create a unique barcode tied to an order
 Authenticate Purchase - use Hydro Raindrop to confirm a purchase
 - To be determined
 
-Authenticate Shipment - perform an authentication of the SKU(s) being sent and reduce from inventory
+DONE Authenticate Shipment - perform an authentication of the SKU(s) being sent and reduce from inventory
 - Reduce the inventory in the smart contract only
 
 Authenticate Receipt - perform an authentication of the product SKU being received by scanning the barcode and storing in the Snowflake
@@ -163,6 +163,12 @@ contract Store {
         require(bytes(p.title).length > 0, 'The product must exist to be purchased');
         require(HydroTokenTestnetInterface(token).allowance(msg.sender, address(this)) >= p.price, 'You must have enough HYDRO tokens approved to purchase this product');
         Order memory newOrder = Order(lastOrderId, _id, now, ein, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending', _barcode);
+
+        // Update the quantity of remaining products
+        if(p.quantity > 0) {
+            p.quantity--;
+            productById[_id] = p;
+        }
 
         pendingOrders[ein].push(newOrder);
         orderById[_id] = newOrder;
