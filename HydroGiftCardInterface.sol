@@ -11,27 +11,12 @@ contract HydroGiftCardInterface {
     function refund(uint _giftCardId) external;
     function refundGiftCard(uint _giftCardId) external;
     function purchaseOffer(uint _vendorEIN, uint _value) external;
-    function transferGiftCard(
-        uint _giftCardId, uint _recipientEIN,
-        uint8 v, bytes32 r, bytes32 s
-    ) external;
-    function redeem(
-        uint _giftCardId, uint _amount, uint _timestamp,
-        uint8 v, bytes32 r, bytes32 s
-    ) external;
-    function redeemAndCall(
-      uint _giftCardId, uint _amount, uint _timestamp,
-      uint8 v, bytes32 r, bytes32 s,
-      address _vendorContractAddress, bytes memory _extraData
-    ) external;
+    function transferGiftCard(uint _giftCardId, uint _recipientEIN, uint8 v, bytes32 r, bytes32 s) external;
+    function redeem(uint _giftCardId, uint _amount, uint _timestamp, uint8 v, bytes32 r, bytes32 s) external;
+    function redeemAndCall(uint _giftCardId, uint _amount, uint _timestamp, uint8 v, bytes32 r, bytes32 s, address _vendorContractAddress, bytes memory _extraData) external;
     function vendorRedeem(uint _giftCardId, uint _amount) external;
     function getGiftCardBalance(uint _giftCardId) external view returns (uint256);
-    function getGiftCard(uint _id)
-      external view returns(
-        string memory vendorCasedHydroID,
-        string memory customerCasedHydroID,
-        uint balance
-    );
+    function getGiftCard(uint _id) external view returns(string memory vendorCasedHydroID, string memory customerCasedHydroID, uint balance);
     function getCustomerGiftCardIds() external view returns(uint[] memory giftCardIds);
     function getVendorGiftCardIds() external view returns(uint[] memory giftCardIds);
 

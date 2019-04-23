@@ -2,6 +2,7 @@ pragma solidity ^0.5.4;
 
 import './HydroTokenTestnetInterface.sol';
 import './IdentityRegistryInterface.sol';
+import './HydroGiftCardInterface.sol';
 
 /*
 DONE Create a SKU - assign a unique ID to a product
