@@ -45,7 +45,8 @@ contract Store {
         string title;
         string description;
         uint256 date;
-        uint256 owner; // EIN owner
+        uint256 einOwner; // EIN owner
+        address owner;
         uint256 price;
         string image;
         bytes32[] attributes;
@@ -103,7 +104,7 @@ contract Store {
         require(bytes(_image).length > 0, 'The image cannot be empty');
         require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to add a product');
 
-        Product memory p = Product(lastId, _sku, _title, _description, now, IdentityRegistryInterface.getEIN(msg.sender), _price, _image, _attributes, _attributeValues);
+        Product memory p = Product(lastId, _sku, _title, _description, now, IdentityRegistryInterface.getEIN(msg.sender), msg.sender, _price, _image, _attributes, _attributeValues);
         products.push(p);
         productById[lastId] = p;
         lastId++;
@@ -157,7 +158,6 @@ contract Store {
         Product memory p = productById[_id];
         require(bytes(p.title).length > 0, 'The product must exist to be purchased');
         require(HydroTokenTestnetInterface(token).allowance(msg.sender, address(this)) >= p.price, 'You must have enough HYDRO tokens approved to purchase this product');
-
         Order memory newOrder = Order(lastOrderId, _id, now, ein, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending');
 
         // Delete the product from the array of products since we only want to purchase one product per order
@@ -171,7 +171,7 @@ contract Store {
 
         pendingOrders[ein].push(newOrder);
         orderById[_id] = newOrder;
-        HydroTokenTestnetInterface(token).transferFrom(msg.sender, address(this), p.price); // Pay the product price
+        HydroTokenTestnetInterface(token).transferFrom(msg.sender, p.owner, p.price); // Pay the product price to the seller
         lastOrderId++;
     }
 
@@ -182,15 +182,15 @@ contract Store {
         Product memory product = productById[order.productId];
         require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to mark the order as completed');
         uint256 ein = IdentityRegistryInterface.getEIN(msg.sender);
-        require(product.owner == ein, 'Only the seller can mark the order as completed');
+        require(product.einOwner == ein, 'Only the seller can mark the order as completed');
         order.state = 'completed';
 
         // Delete the seller order from the array of pending orders
-        for(uint256 i = 0; i < pendingOrders[product.owner].length; i++) {
-            if(pendingOrders[product.owner][i].id == _id) {
-                Order memory lastElement = orderById[pendingOrders[product.owner].length - 1];
-                pendingOrders[product.owner][i] = lastElement;
-                pendingOrders[product.owner].length--;
+        for(uint256 i = 0; i < pendingOrders[product.einOwner].length; i++) {
+            if(pendingOrders[product.einOwner][i].id == _id) {
+                Order memory lastElement = orderById[pendingOrders[product.einOwner].length - 1];
+                pendingOrders[product.einOwner][i] = lastElement;
+                pendingOrders[product.einOwner].length--;
             }
         }
 
