@@ -106,7 +106,6 @@ contract Store {
         Product memory p = Product(lastId, _sku, _title, _description, now, msg.sender, _price, _image, _attributes, _attributeValues);
         products.push(p);
         productById[lastId] = p;
-        EcommerceToken(token).mint(address(this), lastId); // Create a new token for this product which will be owned by this contract until sold
         lastId++;
     }
 
@@ -143,7 +142,8 @@ contract Store {
     /// @param _postalCode The postal code of his location
     /// @param _country Buyer's country
     /// @param _phone The optional phone number for the shipping company
-    function buyProduct(uint256 _id, string memory _nameSurname, string memory _lineOneDirection, string memory _lineTwoDirection, bytes32 _city, bytes32 _stateRegion, uint256 _postalCode, bytes32 _country, uint256 _phone) public payable {
+    /// The payment in HYDRO is made automatically by making a transferFrom after approving the right amount of tokens using the product price
+    function buyProduct(uint256 _id, string memory _nameSurname, string memory _lineOneDirection, string memory _lineTwoDirection, bytes32 _city, bytes32 _stateRegion, uint256 _postalCode, bytes32 _country, uint256 _phone) public {
         // The line 2 address and phone are optional, the rest are mandatory
         require(bytes(_nameSurname).length > 0, 'The name and surname must be set');
         require(bytes(_lineOneDirection).length > 0, 'The line one direction must be set');
@@ -151,14 +151,15 @@ contract Store {
         require(_stateRegion.length > 0, 'The state or region must be set');
         require(_postalCode > 0, 'The postal code must be set');
         require(_country > 0, 'The country must be set');
-        require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to purchase product');
+        require(IdentityRegistryInterface.hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to purchase the product');
 
         Product memory p = productById[_id];
         require(bytes(p.title).length > 0, 'The product must exist to be purchased');
-        Order memory newOrder = Order(lastOrderId, _id, now, msg.sender, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending');
-        require(msg.value >= p.price, "The payment must be larger or equal than the products price");
+        require(HydroTokenTestnetInterface(token).allowance(msg.sender, address(this)) >= p.price, 'You must have enough HYDRO tokens approved to purchase this product');
 
-        // Delete the product from the array of products
+        Order memory newOrder = Order(lastOrderId, _id, now, msg.sender, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending');
+
+        // Delete the product from the array of products since we only want to purchase one product per order
         for(uint256 i = 0; i < products.length; i++) {
             if(products[i].id == _id) {
                 Product memory lastElement = products[products.length - 1];
@@ -167,13 +168,10 @@ contract Store {
             }
         }
 
-        // Return the excess ETH sent by the buyer
-        if(msg.value > p.price) msg.sender.transfer(msg.value - p.price);
         pendingSellerOrders[p.owner].push(newOrder);
         pendingBuyerOrders[msg.sender].push(newOrder);
         orderById[_id] = newOrder;
-        EcommerceToken(token).transferFrom(address(this), msg.sender, _id); // Transfer the product token to the new owner
-        p.owner.transfer(p.price);
+        HydroTokenTestnetInterface(token).transferFrom(msg.sender, address(this), p.price); // Pay the product price
         lastOrderId++;
     }
 
