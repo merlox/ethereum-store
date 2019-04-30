@@ -17,8 +17,9 @@ DONE Inventory - add a SKU to a group of other SKUs to form the foundation of in
 DONE Shipping - define shipping parameters of the SKU or inventory
 - Create a shipping or order struct by using ecommerce-dapp
 
-Price - define price of the SKU or inventory, accept gift cards and coupons from other Hydro Snowflake smart contracts
+DONE Price - define price of the SKU or inventory, accept gift cards and coupons from other Hydro Snowflake smart contracts
 - To be determined
+- We can't accept gift cards because the contract doesn't work with other contracts. Only the owner of the gift card can use it for himself. Gift cards are meant to be a transfer of tokens from a user to another, it can't be used as a payment system.
 
 DONE Create Order - create an order, tied to a Snowflake ID of a business and an end-user containing date, SKU info, shipping info
 - Can be done with ecommerce-dapp + IdentityRegistryInterface.identityExists(ein) +  IdentityRegistryInterface.hasIdentity(address) + IdentityRegistryInterface.getEIN(address)
@@ -26,20 +27,19 @@ DONE Create Order - create an order, tied to a Snowflake ID of a business and an
 DONE Create Barcode - create a unique barcode tied to an order
 - Barcode js https://lindell.me/JsBarcode/
 
-Authenticate Purchase - use Hydro Raindrop to confirm a purchase
-- To be determined
+DONE Authenticate Purchase - use Hydro Raindrop to confirm a purchase
+- The seller has a function to indicate that the products have been shipped and confirmed.
 
 DONE Authenticate Shipment - perform an authentication of the SKU(s) being sent and reduce from inventory
 - Reduce the inventory in the smart contract only
-
-Authenticate Receipt - perform an authentication of the product SKU being received by scanning the barcode and storing in the Snowflake
-- to be determined
 
 Dispute - create a flag on a Snowflake for a disputed order or shipment
 - After a user has purchased a product, he has the option to call the function disputeOrder() while providing a string explaining his situation. An event will be emitted and the seller will be able to call the function counterDisputeOrder() to provide an explanation of the situation. After that, an approved operator will be able to determine how's right. The seller is expected to provide the shipping tracking number.
 */
 
 contract Store {
+    event DisputeGenerated(uint256 indexed id, uint256 indexed orderId, string memory reason);
+
     struct Product {
         uint256 id;
         bytes32 sku;
@@ -59,6 +59,7 @@ contract Store {
         uint256 productId;
         uint256 date;
         uint256 buyer; // EIN buyer
+        address addressBuyer;
         string nameSurname;
         string lineOneDirection;
         string lineTwoDirection;
@@ -75,6 +76,16 @@ contract Store {
         string name;
         bytes32[] skus;
     }
+    struct Dispute {
+        uint256 id;
+        uint256 orderId;
+        uint256 createdAt;
+        address refundReceiver;
+        string reason;
+        string counterReason;
+        bytes32 state; // Either pending, countered or resolved. Where pending indicates "waiting for the seller to respond", countered means "the seller has responded" and resolved is "the dispute has been resolved"
+    }
+
     // Seller ein => orders
     mapping(uint256 => Order[]) public pendingOrders; // The products waiting to be fulfilled
     // Buyer ein => orders
@@ -83,16 +94,27 @@ contract Store {
     mapping(uint256 => Product) public productById;
     // Order id => order struct
     mapping(uint256 => Order) public orderById;
+    // Dispute id => dispute struct
+    mapping(uint256 => Dispute) public disputeById;
     Product[] public products;
     Inventory[] public inventories;
+    Dispute[] public disputes;
+    address[] public operators;
+    address public owner;
     uint256 public lastId;
     uint256 public lastOrderId;
     address public token;
     address public identityRegistry;
 
+    modifier onlyOperator {
+        require(operatorExists(msg.sender), 'Only a valid operator can run this function');
+        _;
+    }
+
     /// @notice To setup the address of the ERC-721 token to use for this contract
     /// @param _token The token address
     constructor(address _token, address _identityRegistry) public {
+        owner = msg.sender;
         token = _token;
         identityRegistry = _identityRegistry;
     }
@@ -163,7 +185,7 @@ contract Store {
         Product memory p = productById[_id];
         require(bytes(p.title).length > 0, 'The product must exist to be purchased');
         require(HydroTokenTestnetInterface(token).allowance(msg.sender, address(this)) >= p.price, 'You must have enough HYDRO tokens approved to purchase this product');
-        Order memory newOrder = Order(lastOrderId, _id, now, ein, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending', _barcode);
+        Order memory newOrder = Order(lastOrderId, _id, now, ein, msg.sender, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending', _barcode);
 
         // Update the quantity of remaining products
         if(p.quantity > 0) {
@@ -217,6 +239,73 @@ contract Store {
         }
     }
 
+    /// @notice To dispute an order for the specified reason as a buyer
+    /// @param _id The order id to dispute
+    /// @param _reason The string indicating why the buyer is disputing this order
+    function disputeOrder(uint256 _id, string memory _reason) public {
+        require(bytes(_reason).length > 0, 'The reason for disputing the order cannot be empty');
+        Order memory order = orderById[_id];
+        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
+        require(order.buyer == ein, 'Only the buyer can dispute his order');
+        uint256 disputeId = disputes.length;
+        Dispute memory d = Dispute(disputeId, _id, _reason);
+        disputes.push(d);
+        disputeById[disputeId] = d;
+        emit DisputeGenerated(disputeId, _id, now, msg.sender, _reason, '', 'pending');
+    }
+
+    /// @notice To respond to a dispute as a seller
+    /// @param _disputeId The id of the dispute to respond to
+    /// @param _counterReason The reason for countering the argument of the buyer
+    function counterDispute(uint256 _disputeId, string memory _counterReason) public {
+        require(bytes(_counterReason).length > 0, 'The counter reason must be set');
+        Dispute memory d = disputeById[_disputeId];
+        Order memory order = orderById[d.orderId];
+        Product memory product = productById[order.productId];
+        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
+        require(product.einOwner == ein, 'Only the seller can counter dispute this order');
+        d.counterReason = _counterReason;
+        d.state = 'countered';
+        disputeById[disputeId] = d;
+        for(uint256 i = 0; i < disputes.length; i++) {
+            if(disputes[i].id == _disputeId) {
+                disputes[i] = d;
+                break;
+            }
+        }
+    }
+
+    /// @notice To resolve a dispute and pay the buyer from the seller's approved balance
+    /// @param _disputeId The id of the dispute to resolve
+    /// @param _isBuyerWinner If the winner is the buyer or not to perform the transfer
+    function resolveDispute(uint256 _disputeId, bool _isBuyerWinner) public onlyOperator {
+        Dispute memory d = disputeById[_disputeId];
+        Order memory order = orderById[d.orderId];
+        Product memory product = productById[order.productId];
+        if(_isBuyerWinner) {
+            // Pay the product price to the buyer as a refund
+            HydroTokenTestnetInterface(token).transferFrom(product.owner, order.addressBuyer, product.price);
+        }
+    }
+
+    /// @notice To add or delete operators by the owner
+    /// @param _user A valid address to add or remove from the list of operators
+    /// @param _isRemoved Whether you want to add or remove this operator
+    function setOperator(address _user, bool _isRemoved) public {
+        require(msg.sender == owner, 'Only the owner can add operators');
+        if(_isRemoved) {
+            for(uint256 i = 0; i < operators.length; i++) {
+                if(operators[i] == _user) {
+                    address lastElement = operators[operators.length - 1];
+                    operators[i] = lastElement;
+                    operators.length--;
+                }
+            }
+        } else {
+            operators.push(_user);
+        }
+    }
+
     /// @notice Returns the product length
     /// @return uint256 The number of products
     function getProductsLength() public view returns(uint256) {
@@ -230,5 +319,17 @@ contract Store {
     function getOrdersLength(bytes32 _type, address _owner) public view returns(uint256) {
         if(_type == 'pending') return pendingOrders[_owner].length;
         else if(_type == 'completed') return completedOrders[_owner].length;
+    }
+
+    /// @notice To check if an operator exists
+    /// @param _operator The address of the operator to check
+    /// @return bool Whether he's a valid operator or not
+    function operatorExists(address _operator) internal returns(bool) {
+        for(uint256 i = 0; i < operators.length; i++) {
+            if(_operator == operators[i]) {
+                return true;
+            }
+        }
+        return false;
     }
 }
