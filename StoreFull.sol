@@ -1,7 +1,5 @@
 pragma solidity ^0.5.4;
 
-import './Storage.sol';
-
 contract HydroTokenTestnetInterface {
     function transfer(address _to, uint256 _amount) public returns (bool success);
     function transferFrom(address _from, address _to, uint256 _amount) public returns (bool success);
@@ -103,7 +101,7 @@ DONE Dispute - create a flag on a Snowflake for a disputed order or shipment
 - After a user has purchased a product, he has the option to call the function disputeOrder() while providing a string explaining his situation. An event will be emitted and the seller will be able to call the function counterDisputeOrder() to provide an explanation of the situation. After that, an approved operator will be able to determine how's right. The seller is expected to provide the shipping tracking number.
 */
 
-contract Store is Storage {
+contract Store {
     event DisputeGenerated(uint256 indexed id, uint256 indexed orderId, string reason);
 
     struct Product {
@@ -120,16 +118,51 @@ contract Store is Storage {
         bytes32[] attributeValues;
         uint256 quantity;
     }
+    struct Order {
+        uint256 id; // Product ID associated with the order
+        uint256 productId;
+        uint256 date;
+        uint256 buyer; // EIN buyer
+        address addressBuyer;
+        string nameSurname;
+        string lineOneDirection;
+        string lineTwoDirection;
+        bytes32 city;
+        bytes32 stateRegion;
+        uint256 postalCode;
+        bytes32 country;
+        uint256 phone;
+        string state; // Either 'pending', 'completed'
+        uint256 barcode;
+    }
     struct Inventory {
         uint256 id;
         string name;
         bytes32[] skus;
     }
+    struct Dispute {
+        uint256 id;
+        uint256 orderId;
+        uint256 createdAt;
+        address refundReceiver;
+        string reason;
+        string counterReason;
+        bytes32 state; // Either pending, countered or resolved. Where pending indicates "waiting for the seller to respond", countered means "the seller has responded" and resolved is "the dispute has been resolved"
+    }
 
+    // Seller ein => orders
+    mapping(uint256 => Order[]) public pendingOrders; // The products waiting to be fulfilled
+    // Buyer ein => orders
+    mapping(uint256 => Order[]) public completedOrders;
     // Product id => product
     mapping(uint256 => Product) public productById;
+    // Order id => order struct
+    mapping(uint256 => Order) public orderById;
+    // Dispute id => dispute struct
+    mapping(uint256 => Dispute) public disputeById;
     Product[] public products;
     Inventory[] public inventories;
+    Dispute[] public disputes;
     address[] public operators;
     address public owner;
     uint256 public lastId;
@@ -211,19 +244,23 @@ contract Store is Storage {
         require(_postalCode > 0, 'The postal code must be set');
         require(_country > 0, 'The country must be set');
         require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to purchase the product');
+
         uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
         Product memory p = productById[_id];
         require(bytes(p.title).length > 0, 'The product must exist to be purchased');
         require(HydroTokenTestnetInterface(token).allowance(msg.sender, address(this)) >= p.price, 'You must have enough HYDRO tokens approved to purchase this product');
+        Order memory newOrder = Order(lastOrderId, _id, now, ein, msg.sender, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending', _barcode);
 
-        // Update the quantity of thex remaining products
+        // Update the quantity of remaining products
         if(p.quantity > 0) {
             p.quantity--;
             productById[_id] = p;
         }
 
+        pendingOrders[ein].push(newOrder);
+        orderById[_id] = newOrder;
         HydroTokenTestnetInterface(token).transferFrom(msg.sender, p.owner, p.price); // Pay the product price to the seller
-        buyProductStorage(ein, _id, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, _barcode);
+        lastOrderId++;
     }
 
     /// @notice To mark an order as completed
@@ -271,8 +308,13 @@ contract Store is Storage {
     /// @param _reason The string indicating why the buyer is disputing this order
     function disputeOrder(uint256 _id, string memory _reason) public {
         require(bytes(_reason).length > 0, 'The reason for disputing the order cannot be empty');
+        Order memory order = orderById[_id];
         uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
-        uint256 disputeId = disputeOrderStorage(ein, _id, _reason);
+        require(order.buyer == ein, 'Only the buyer can dispute his order');
+        uint256 disputeId = disputes.length;
+        Dispute memory d = Dispute(disputeId, _id, now, msg.sender, _reason, '', 'pending');
+        disputes.push(d);
+        disputeById[disputeId] = d;
         emit DisputeGenerated(disputeId, _id, _reason);
     }
 
@@ -281,11 +323,20 @@ contract Store is Storage {
     /// @param _counterReason The reason for countering the argument of the buyer
     function counterDispute(uint256 _disputeId, string memory _counterReason) public {
         require(bytes(_counterReason).length > 0, 'The counter reason must be set');
-        uint256 productId = getProductIdStorage(_disputeId);
+        Dispute memory d = disputeById[_disputeId];
+        Order memory order = orderById[d.orderId];
         Product memory product = productById[order.productId];
         uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
         require(product.einOwner == ein, 'Only the seller can counter dispute this order');
-        counterDisputeStorage
+        d.counterReason = _counterReason;
+        d.state = 'countered';
+        disputeById[_disputeId] = d;
+        for(uint256 i = 0; i < disputes.length; i++) {
+            if(disputes[i].id == _disputeId) {
+                disputes[i] = d;
+                break;
+            }
+        }
     }
 
     /// @notice To resolve a dispute and pay the buyer from the seller's approved balance
