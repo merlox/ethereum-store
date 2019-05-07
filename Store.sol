@@ -16,7 +16,6 @@ contract HydroTokenTestnetInterface {
     function getMoreTokens() public;
 }
 
-
 interface IdentityRegistryInterface {
     function isSigned(address _address, bytes32 messageHash, uint8 v, bytes32 r, bytes32 s)
         external pure returns (bool);
@@ -69,136 +68,7 @@ interface IdentityRegistryInterface {
     ) external;
 }
 
-
-/// @notice A contract to store several variables that can't be held in the store contract to avoid stack too deep errors
-/// @author Merunas Grincalaitis <merunasgrincalaitis@gmail.com>
-contract Storage {
-    struct Order {
-        uint256 id; // Product ID associated with the order
-        uint256 productId;
-        uint256 date;
-        uint256 buyer; // EIN buyer
-        address addressBuyer;
-        string nameSurname;
-        string lineOneDirection;
-        string lineTwoDirection;
-        bytes32 city;
-        bytes32 stateRegion;
-        uint256 postalCode;
-        bytes32 country;
-        uint256 phone;
-        string state; // Either 'pending', 'completed'
-        uint256 barcode;
-    }
-    struct Dispute {
-        uint256 id;
-        uint256 orderId;
-        uint256 createdAt;
-        address refundReceiver;
-        string reason;
-        string counterReason;
-        bytes32 state; // Either pending, countered or resolved. Where pending indicates "waiting for the seller to respond", countered means "the seller has responded" and resolved is "the dispute has been resolved"
-    }
-
-    // Seller ein => orders
-    mapping(uint256 => Order[]) public pendingOrders; // The products waiting to be fulfilled
-    // Buyer ein => orders
-    mapping(uint256 => Order[]) public completedOrders;
-    // Order id => order struct
-    mapping(uint256 => Order) public orderById;
-    // Dispute id => dispute struct
-    mapping(uint256 => Dispute) public disputeById;
-    Dispute[] public disputes;
-    address[] public operators;
-    uint256 public lastId;
-    uint256 public lastOrderId;
-
-    function buyProductStorage(uint256 _ein, uint256 _id, string memory _nameSurname, string memory _lineOneDirection, string memory _lineTwoDirection, bytes32 _city, bytes32 _stateRegion, uint256 _postalCode, bytes32 _country, uint256 _phone, uint256 _barcode) internal {
-        Order memory newOrder = Order(lastOrderId, _id, now, _ein, msg.sender, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending', _barcode);
-
-        pendingOrders[_ein].push(newOrder);
-        orderById[_id] = newOrder;
-        lastOrderId++;
-    }
-
-    /// @notice To mark an order as completed
-    /// @param _id The id of the order to mark as sent and completed
-    function markOrderCompletedStorage(uint256 _id) public {
-        Order memory order = orderById[_id];
-        Product memory product = productById[order.productId];
-        require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to mark the order as completed');
-        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
-        require(product.einOwner == ein, 'Only the seller can mark the order as completed');
-        order.state = 'completed';
-
-        // Delete the seller order from the array of pending orders
-        for(uint256 i = 0; i < pendingOrders[product.einOwner].length; i++) {
-            if(pendingOrders[product.einOwner][i].id == _id) {
-                Order memory lastElement = orderById[pendingOrders[product.einOwner].length - 1];
-                pendingOrders[product.einOwner][i] = lastElement;
-                pendingOrders[product.einOwner].length--;
-            }
-        }
-
-        completedOrders[order.buyer].push(order);
-        orderById[_id] = order;
-    }
-
-    function disputeOrderStorage(uint256 _ein, uint256 _id, string memory _reason) internal returns(uint256) {
-        Order memory order = orderById[_id];
-        require(order.buyer == _ein, 'Only the buyer can dispute his order');
-        uint256 disputeId = disputes.length;
-        Dispute memory d = Dispute(disputeId, _id, now, msg.sender, _reason, '', 'pending');
-        disputes.push(d);
-        disputeById[disputeId] = d;
-        return disputeId;
-    }
-
-    function counterDisputeStorage(uint256 _disputeId, string memory _counterReason) internal {
-        Dispute memory d = disputeById[_disputeId];
-        Order memory order = orderById[d.orderId];
-        d.counterReason = _counterReason;
-        d.state = 'countered';
-        disputeById[_disputeId] = d;
-        for(uint256 i = 0; i < disputes.length; i++) {
-            if(disputes[i].id == _disputeId) {
-                disputes[i] = d;
-                break;
-            }
-        }
-    }
-
-    /// @notice To resolve a dispute and pay the buyer from the seller's approved balance
-    /// @param _disputeId The id of the dispute to resolve
-    /// @param _isBuyerWinner If the winner is the buyer or not to perform the transfer
-    function resolveDisputeStorage(uint256 _disputeId, address _token, address _productOwner, uint256 _productPrice, bool _isBuyerWinner) internal {
-        Dispute memory d = disputeById[_disputeId];
-        Order memory order = orderById[d.orderId];
-
-        if(_isBuyerWinner) {
-            // Pay the product price to the buyer as a refund
-            HydroTokenTestnetInterface(_token).transferFrom(_productOwner, order.addressBuyer, _productPrice);
-        }
-    }
-
-    function getProductIdStorage(uint256 _disputeId) internal view returns(uint256) {
-        Dispute memory d = disputeById[_disputeId];
-        Order memory order = orderById[d.orderId];
-        return order.productId;
-    }
-
-    /// @notice To get the pending seller or buyer orders
-    /// @param _type If you want to get the pending seller, buyer or completed orders
-    /// @param _einOwner The EIN of the owner of those orders
-    /// @return uint256 The number of orders to get
-    function getOrdersLengthStorage(bytes32 _type, uint256 _einOwner) public view returns(uint256) {
-        if(_type == 'pending') return pendingOrders[_einOwner].length;
-        else if(_type == 'completed') return completedOrders[_einOwner].length;
-    }
-}
-
-
-contract Store is Storage {
+contract Store {
     event DisputeGenerated(uint256 indexed id, uint256 indexed orderId, string reason);
 
     struct Product {
@@ -215,20 +85,60 @@ contract Store is Storage {
         bytes32[] attributeValues;
         uint256 quantity;
     }
+    struct Order {
+        uint256 id; // Unique order ID
+        uint256 addressId;
+        uint256 productId;
+        uint256 date;
+        uint256 buyer; // EIN buyer
+        address addressBuyer;
+        string state; // Either 'pending', 'completed'
+        uint256 barcode;
+    }
+    struct Address {
+        string nameSurname;
+        string direction;
+        bytes32 city;
+        bytes32 stateRegion;
+        uint256 postalCode;
+        bytes32 country;
+        uint256 phone;
+    }
     struct Inventory {
         uint256 id;
         string name;
         bytes32[] skus;
     }
+    struct Dispute {
+        uint256 id;
+        uint256 orderId;
+        uint256 createdAt;
+        address refundReceiver;
+        string reason;
+        string counterReason;
+        bytes32 state; // Either pending, countered or resolved. Where pending indicates "waiting for the seller to respond", countered means "the seller has responded" and resolved is "the dispute has been resolved"
+    }
 
+    // Seller ein => orders
+    mapping(uint256 => Order[]) public pendingOrders; // The products waiting to be fulfilled
+    // Buyer ein => orders
+    mapping(uint256 => Order[]) public completedOrders;
     // Product id => product
     mapping(uint256 => Product) public productById;
+    // Order id => order struct
+    mapping(uint256 => Order) public orderById;
+    // Dispute id => dispute struct
+    mapping(uint256 => Dispute) public disputeById;
+    // Id => address
+    mapping(uint256 => Address) public addressById;
     Product[] public products;
     Inventory[] public inventories;
+    Dispute[] public disputes;
     address[] public operators;
     address public owner;
     uint256 public lastId;
     uint256 public lastOrderId;
+    uint256 public lastAddressId;
     address public token;
     address public identityRegistry;
 
@@ -297,34 +207,58 @@ contract Store is Storage {
     /// @param _country Buyer's country
     /// @param _phone The optional phone number for the shipping company
     /// The payment in HYDRO is made automatically by making a transferFrom after approving the right amount of tokens using the product price
-    function buyProduct(uint256 _id, string memory _nameSurname, string memory _lineOneDirection, string memory _lineTwoDirection, bytes32 _city, bytes32 _stateRegion, uint256 _postalCode, bytes32 _country, uint256 _phone, uint256 _barcode) public {
+    function buyProduct(uint256 _id, string memory _nameSurname, string memory _direction, bytes32 _city, bytes32 _stateRegion, uint256 _postalCode, bytes32 _country, uint256 _phone, uint256 _barcode) public {
         // The line 2 address and phone are optional, the rest are mandatory
         require(bytes(_nameSurname).length > 0, 'The name and surname must be set');
-        require(bytes(_lineOneDirection).length > 0, 'The line one direction must be set');
+        require(bytes(_direction).length > 0, 'The line one direction must be set');
         require(_city.length > 0, 'The city must be set');
         require(_stateRegion.length > 0, 'The state or region must be set');
         require(_postalCode > 0, 'The postal code must be set');
         require(_country > 0, 'The country must be set');
         require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to purchase the product');
+
         uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
         Product memory p = productById[_id];
         require(bytes(p.title).length > 0, 'The product must exist to be purchased');
         require(HydroTokenTestnetInterface(token).allowance(msg.sender, address(this)) >= p.price, 'You must have enough HYDRO tokens approved to purchase this product');
+        Address memory newAddress = Address(_nameSurname, _direction, _city, _stateRegion, _postalCode, _country, _phone);
+        Order memory newOrder = Order(lastOrderId, lastAddressId, _id, now, ein, msg.sender, 'pending', _barcode);
 
-        // Update the quantity of thex remaining products
+        // Update the quantity of remaining products
         if(p.quantity > 0) {
             p.quantity--;
             productById[_id] = p;
         }
 
+        pendingOrders[ein].push(newOrder);
+        orderById[_id] = newOrder;
+        addressById[lastAddressId] = newAddress;
         HydroTokenTestnetInterface(token).transferFrom(msg.sender, p.owner, p.price); // Pay the product price to the seller
-        buyProductStorage(ein, _id, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, _barcode);
+        lastOrderId++;
+        lastAddressId++;
     }
 
     /// @notice To mark an order as completed
     /// @param _id The id of the order to mark as sent and completed
     function markOrderCompleted(uint256 _id) public {
-        markOrderCompletedStorage(_id);
+        Order memory order = orderById[_id];
+        Product memory product = productById[order.productId];
+        require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to mark the order as completed');
+        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
+        require(product.einOwner == ein, 'Only the seller can mark the order as completed');
+        order.state = 'completed';
+
+        // Delete the seller order from the array of pending orders
+        for(uint256 i = 0; i < pendingOrders[product.einOwner].length; i++) {
+            if(pendingOrders[product.einOwner][i].id == _id) {
+                Order memory lastElement = orderById[pendingOrders[product.einOwner].length - 1];
+                pendingOrders[product.einOwner][i] = lastElement;
+                pendingOrders[product.einOwner].length--;
+            }
+        }
+
+        completedOrders[order.buyer].push(order);
+        orderById[_id] = order;
     }
 
     /// @notice To delete a product
@@ -349,8 +283,13 @@ contract Store is Storage {
     /// @param _reason The string indicating why the buyer is disputing this order
     function disputeOrder(uint256 _id, string memory _reason) public {
         require(bytes(_reason).length > 0, 'The reason for disputing the order cannot be empty');
+        Order memory order = orderById[_id];
         uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
-        uint256 disputeId = disputeOrderStorage(ein, _id, _reason);
+        require(order.buyer == ein, 'Only the buyer can dispute his order');
+        uint256 disputeId = disputes.length;
+        Dispute memory d = Dispute(disputeId, _id, now, msg.sender, _reason, '', 'pending');
+        disputes.push(d);
+        disputeById[disputeId] = d;
         emit DisputeGenerated(disputeId, _id, _reason);
     }
 
@@ -359,21 +298,33 @@ contract Store is Storage {
     /// @param _counterReason The reason for countering the argument of the buyer
     function counterDispute(uint256 _disputeId, string memory _counterReason) public {
         require(bytes(_counterReason).length > 0, 'The counter reason must be set');
-        uint256 productId = getProductIdStorage(_disputeId);
-        Product memory product = productById[productId];
+        Dispute memory d = disputeById[_disputeId];
+        Order memory order = orderById[d.orderId];
+        Product memory product = productById[order.productId];
         uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
         require(product.einOwner == ein, 'Only the seller can counter dispute this order');
-        counterDisputeStorage(_disputeId, _counterReason);
+        d.counterReason = _counterReason;
+        d.state = 'countered';
+        disputeById[_disputeId] = d;
+        for(uint256 i = 0; i < disputes.length; i++) {
+            if(disputes[i].id == _disputeId) {
+                disputes[i] = d;
+                break;
+            }
+        }
     }
 
     /// @notice To resolve a dispute and pay the buyer from the seller's approved balance
     /// @param _disputeId The id of the dispute to resolve
     /// @param _isBuyerWinner If the winner is the buyer or not to perform the transfer
     function resolveDispute(uint256 _disputeId, bool _isBuyerWinner) public onlyOperator {
-        uint256 productId = getProductIdStorage(_disputeId);
-        Product memory product = productById[productId];
-
-        resolveDisputeStorage(_disputeId, token, product.owner, product.price, _isBuyerWinner);
+        Dispute memory d = disputeById[_disputeId];
+        Order memory order = orderById[d.orderId];
+        Product memory product = productById[order.productId];
+        if(_isBuyerWinner) {
+            // Pay the product price to the buyer as a refund
+            HydroTokenTestnetInterface(token).transferFrom(product.owner, order.addressBuyer, product.price);
+        }
     }
 
     /// @notice To add or delete operators by the owner
@@ -405,13 +356,14 @@ contract Store is Storage {
     /// @param _einOwner The EIN of the owner of those orders
     /// @return uint256 The number of orders to get
     function getOrdersLength(bytes32 _type, uint256 _einOwner) public view returns(uint256) {
-        return getOrdersLengthStorage(_type, _einOwner);
+        if(_type == 'pending') return pendingOrders[_einOwner].length;
+        else if(_type == 'completed') return completedOrders[_einOwner].length;
     }
 
     /// @notice To check if an operator exists
     /// @param _operator The address of the operator to check
     /// @return bool Whether he's a valid operator or not
-    function operatorExists(address _operator) internal returns(bool) {
+    function operatorExists(address _operator) internal view returns(bool) {
         for(uint256 i = 0; i < operators.length; i++) {
             if(_operator == operators[i]) {
                 return true;
