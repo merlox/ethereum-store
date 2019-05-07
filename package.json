@@ -1,0 +1,25 @@
+{
+  "name": "ethereum-store",
+  "version": "1.0.0",
+  "description": "The Ethereum store smart contracts",
+  "main": "truffle-config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://merlox:jakx1234.@github.com/merlox/ethereum-store.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/merlox/ethereum-store/issues"
+  },
+  "homepage": "https://github.com/merlox/ethereum-store#readme",
+  "dependencies": {
+    "truffle-hdwallet-provider": "^1.0.8"
+  }
+}

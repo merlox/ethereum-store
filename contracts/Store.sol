@@ -1,26 +1,24 @@
-pragma solidity ^0.5.4;
+pragma solidity ^0.5.0;
 
-contract HydroTokenTestnetInterface {
-    function transfer(address _to, uint256 _amount) public returns (bool success);
-    function transferFrom(address _from, address _to, uint256 _amount) public returns (bool success);
-    function doTransfer(address _from, address _to, uint _amount) internal;
-    function balanceOf(address _owner) public view returns (uint256 balance);
-    function approve(address _spender, uint256 _amount) public returns (bool success);
-    function approveAndCall(address _spender, uint256 _value, bytes memory _extraData) public returns (bool success);
-    function burn(uint256 _value) public;
-    function allowance(address _owner, address _spender) public view returns (uint256 remaining);
-    function totalSupply() public view returns (uint);
-    function setRaindropAddress(address _raindrop) public;
-    function authenticate(uint _value, uint _challenge, uint _partnerId) public;
-    function setBalances(address[] memory _addressList, uint[] memory _amounts) public;
-    function getMoreTokens() public;
+interface HydroTokenTestnetInterface {
+    function transfer(address _to, uint256 _amount) external returns (bool success);
+    function transferFrom(address _from, address _to, uint256 _amount) external returns (bool success);
+    function doTransfer(address _from, address _to, uint _amount) external;
+    function balanceOf(address _owner) external view returns (uint256 balance);
+    function approve(address _spender, uint256 _amount) external returns (bool success);
+    function approveAndCall(address _spender, uint256 _value, bytes calldata _extraData) external returns (bool success);
+    function burn(uint256 _value) external;
+    function allowance(address _owner, address _spender) external view returns (uint256 remaining);
+    function totalSupply() external view returns (uint);
+    function setRaindropAddress(address _raindrop) external;
+    function authenticate(uint _value, uint _challenge, uint _partnerId) external;
+    function setBalances(address[] calldata _addressList, uint[] calldata _amounts) external;
+    function getMoreTokens() external;
 }
 
 interface IdentityRegistryInterface {
     function isSigned(address _address, bytes32 messageHash, uint8 v, bytes32 r, bytes32 s)
         external pure returns (bool);
-
-    // Identity View Functions /////////////////////////////////////////////////////////////////////////////////////////
     function identityExists(uint ein) external view returns (bool);
     function hasIdentity(address _address) external view returns (bool);
     function getEIN(address _address) external view returns (uint ein);
@@ -31,8 +29,6 @@ interface IdentityRegistryInterface {
         address recoveryAddress,
         address[] memory associatedAddresses, address[] memory providers, address[] memory resolvers
     );
-
-    // Identity Management Functions ///////////////////////////////////////////////////////////////////////////////////
     function createIdentity(address recoveryAddress, address[] calldata providers, address[] calldata resolvers)
         external returns (uint ein);
     function createIdentityDelegated(
@@ -57,8 +53,6 @@ interface IdentityRegistryInterface {
     function addResolversFor(uint ein, address[] calldata resolvers) external;
     function removeResolvers(address[] calldata resolvers) external;
     function removeResolversFor(uint ein, address[] calldata resolvers) external;
-
-    // Recovery Management Functions ///////////////////////////////////////////////////////////////////////////////////
     function triggerRecoveryAddressChange(address newRecoveryAddress) external;
     function triggerRecoveryAddressChangeFor(uint ein, address newRecoveryAddress) external;
     function triggerRecovery(uint ein, address newAssociatedAddress, uint8 v, bytes32 r, bytes32 s, uint timestamp)
