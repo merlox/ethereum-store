@@ -1,7 +1,5 @@
 pragma solidity ^0.5.4;
 
-import './Storage.sol';
-
 contract HydroTokenTestnetInterface {
     function transfer(address _to, uint256 _amount) public returns (bool success);
     function transferFrom(address _from, address _to, uint256 _amount) public returns (bool success);
@@ -17,6 +15,7 @@ contract HydroTokenTestnetInterface {
     function setBalances(address[] memory _addressList, uint[] memory _amounts) public;
     function getMoreTokens() public;
 }
+
 
 interface IdentityRegistryInterface {
     function isSigned(address _address, bytes32 messageHash, uint8 v, bytes32 r, bytes32 s)
@@ -70,38 +69,134 @@ interface IdentityRegistryInterface {
     ) external;
 }
 
-/*
-DONE Create a SKU - assign a unique ID to a product
-- With ecommerce-dapp contract
 
-DONE Define attributes - define the attributes of the product to store on-chain, such as gender, size, color, materials
-- Attributes will be stored in an array of bytes32[] and the values will be bytes32[]. If it's a number, you simply convert it to string.
+/// @notice A contract to store several variables that can't be held in the store contract to avoid stack too deep errors
+/// @author Merunas Grincalaitis <merunasgrincalaitis@gmail.com>
+contract Storage {
+    struct Order {
+        uint256 id; // Product ID associated with the order
+        uint256 productId;
+        uint256 date;
+        uint256 buyer; // EIN buyer
+        address addressBuyer;
+        string nameSurname;
+        string lineOneDirection;
+        string lineTwoDirection;
+        bytes32 city;
+        bytes32 stateRegion;
+        uint256 postalCode;
+        bytes32 country;
+        uint256 phone;
+        string state; // Either 'pending', 'completed'
+        uint256 barcode;
+    }
+    struct Dispute {
+        uint256 id;
+        uint256 orderId;
+        uint256 createdAt;
+        address refundReceiver;
+        string reason;
+        string counterReason;
+        bytes32 state; // Either pending, countered or resolved. Where pending indicates "waiting for the seller to respond", countered means "the seller has responded" and resolved is "the dispute has been resolved"
+    }
 
-DONE Inventory - add a SKU to a group of other SKUs to form the foundation of inventory management
-- Create an inventory struct containing products or use mappings or arrays
+    // Seller ein => orders
+    mapping(uint256 => Order[]) public pendingOrders; // The products waiting to be fulfilled
+    // Buyer ein => orders
+    mapping(uint256 => Order[]) public completedOrders;
+    // Order id => order struct
+    mapping(uint256 => Order) public orderById;
+    // Dispute id => dispute struct
+    mapping(uint256 => Dispute) public disputeById;
+    Dispute[] public disputes;
+    address[] public operators;
+    uint256 public lastId;
+    uint256 public lastOrderId;
 
-DONE Shipping - define shipping parameters of the SKU or inventory
-- Create a shipping or order struct by using ecommerce-dapp
+    function buyProductStorage(uint256 _ein, uint256 _id, string memory _nameSurname, string memory _lineOneDirection, string memory _lineTwoDirection, bytes32 _city, bytes32 _stateRegion, uint256 _postalCode, bytes32 _country, uint256 _phone, uint256 _barcode) internal {
+        Order memory newOrder = Order(lastOrderId, _id, now, _ein, msg.sender, _nameSurname, _lineOneDirection, _lineTwoDirection, _city, _stateRegion, _postalCode, _country, _phone, 'pending', _barcode);
 
-DONE Price - define price of the SKU or inventory, accept gift cards and coupons from other Hydro Snowflake smart contracts
-- To be determined
-- We can't accept gift cards because the contract doesn't work with other contracts. Only the owner of the gift card can use it for himself. Gift cards are meant to be a transfer of tokens from a user to another, it can't be used as a payment system.
+        pendingOrders[_ein].push(newOrder);
+        orderById[_id] = newOrder;
+        lastOrderId++;
+    }
 
-DONE Create Order - create an order, tied to a Snowflake ID of a business and an end-user containing date, SKU info, shipping info
-- Can be done with ecommerce-dapp + IdentityRegistryInterface.identityExists(ein) +  IdentityRegistryInterface.hasIdentity(address) + IdentityRegistryInterface.getEIN(address)
+    /// @notice To mark an order as completed
+    /// @param _id The id of the order to mark as sent and completed
+    function markOrderCompletedStorage(uint256 _id) public {
+        Order memory order = orderById[_id];
+        Product memory product = productById[order.productId];
+        require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to mark the order as completed');
+        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
+        require(product.einOwner == ein, 'Only the seller can mark the order as completed');
+        order.state = 'completed';
 
-DONE Create Barcode - create a unique barcode tied to an order
-- Barcode js https://lindell.me/JsBarcode/
+        // Delete the seller order from the array of pending orders
+        for(uint256 i = 0; i < pendingOrders[product.einOwner].length; i++) {
+            if(pendingOrders[product.einOwner][i].id == _id) {
+                Order memory lastElement = orderById[pendingOrders[product.einOwner].length - 1];
+                pendingOrders[product.einOwner][i] = lastElement;
+                pendingOrders[product.einOwner].length--;
+            }
+        }
 
-DONE Authenticate Purchase - use Hydro Raindrop to confirm a purchase
-- The seller has a function to indicate that the products have been shipped and confirmed.
+        completedOrders[order.buyer].push(order);
+        orderById[_id] = order;
+    }
 
-DONE Authenticate Shipment - perform an authentication of the SKU(s) being sent and reduce from inventory
-- Reduce the inventory in the smart contract only
+    function disputeOrderStorage(uint256 _ein, uint256 _id, string memory _reason) internal returns(uint256) {
+        Order memory order = orderById[_id];
+        require(order.buyer == _ein, 'Only the buyer can dispute his order');
+        uint256 disputeId = disputes.length;
+        Dispute memory d = Dispute(disputeId, _id, now, msg.sender, _reason, '', 'pending');
+        disputes.push(d);
+        disputeById[disputeId] = d;
+        return disputeId;
+    }
 
-DONE Dispute - create a flag on a Snowflake for a disputed order or shipment
-- After a user has purchased a product, he has the option to call the function disputeOrder() while providing a string explaining his situation. An event will be emitted and the seller will be able to call the function counterDisputeOrder() to provide an explanation of the situation. After that, an approved operator will be able to determine how's right. The seller is expected to provide the shipping tracking number.
-*/
+    function counterDisputeStorage(uint256 _disputeId, string memory _counterReason) internal {
+        Dispute memory d = disputeById[_disputeId];
+        Order memory order = orderById[d.orderId];
+        d.counterReason = _counterReason;
+        d.state = 'countered';
+        disputeById[_disputeId] = d;
+        for(uint256 i = 0; i < disputes.length; i++) {
+            if(disputes[i].id == _disputeId) {
+                disputes[i] = d;
+                break;
+            }
+        }
+    }
+
+    /// @notice To resolve a dispute and pay the buyer from the seller's approved balance
+    /// @param _disputeId The id of the dispute to resolve
+    /// @param _isBuyerWinner If the winner is the buyer or not to perform the transfer
+    function resolveDisputeStorage(uint256 _disputeId, address _token, address _productOwner, uint256 _productPrice, bool _isBuyerWinner) internal {
+        Dispute memory d = disputeById[_disputeId];
+        Order memory order = orderById[d.orderId];
+
+        if(_isBuyerWinner) {
+            // Pay the product price to the buyer as a refund
+            HydroTokenTestnetInterface(_token).transferFrom(_productOwner, order.addressBuyer, _productPrice);
+        }
+    }
+
+    function getProductIdStorage(uint256 _disputeId) internal view returns(uint256) {
+        Dispute memory d = disputeById[_disputeId];
+        Order memory order = orderById[d.orderId];
+        return order.productId;
+    }
+
+    /// @notice To get the pending seller or buyer orders
+    /// @param _type If you want to get the pending seller, buyer or completed orders
+    /// @param _einOwner The EIN of the owner of those orders
+    /// @return uint256 The number of orders to get
+    function getOrdersLengthStorage(bytes32 _type, uint256 _einOwner) public view returns(uint256) {
+        if(_type == 'pending') return pendingOrders[_einOwner].length;
+        else if(_type == 'completed') return completedOrders[_einOwner].length;
+    }
+}
+
 
 contract Store is Storage {
     event DisputeGenerated(uint256 indexed id, uint256 indexed orderId, string reason);
@@ -229,24 +324,7 @@ contract Store is Storage {
     /// @notice To mark an order as completed
     /// @param _id The id of the order to mark as sent and completed
     function markOrderCompleted(uint256 _id) public {
-        Order memory order = orderById[_id];
-        Product memory product = productById[order.productId];
-        require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to mark the order as completed');
-        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
-        require(product.einOwner == ein, 'Only the seller can mark the order as completed');
-        order.state = 'completed';
-
-        // Delete the seller order from the array of pending orders
-        for(uint256 i = 0; i < pendingOrders[product.einOwner].length; i++) {
-            if(pendingOrders[product.einOwner][i].id == _id) {
-                Order memory lastElement = orderById[pendingOrders[product.einOwner].length - 1];
-                pendingOrders[product.einOwner][i] = lastElement;
-                pendingOrders[product.einOwner].length--;
-            }
-        }
-
-        completedOrders[order.buyer].push(order);
-        orderById[_id] = order;
+        markOrderCompletedStorage(_id);
     }
 
     /// @notice To delete a product
@@ -282,23 +360,20 @@ contract Store is Storage {
     function counterDispute(uint256 _disputeId, string memory _counterReason) public {
         require(bytes(_counterReason).length > 0, 'The counter reason must be set');
         uint256 productId = getProductIdStorage(_disputeId);
-        Product memory product = productById[order.productId];
+        Product memory product = productById[productId];
         uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
         require(product.einOwner == ein, 'Only the seller can counter dispute this order');
-        counterDisputeStorage
+        counterDisputeStorage(_disputeId, _counterReason);
     }
 
     /// @notice To resolve a dispute and pay the buyer from the seller's approved balance
     /// @param _disputeId The id of the dispute to resolve
     /// @param _isBuyerWinner If the winner is the buyer or not to perform the transfer
     function resolveDispute(uint256 _disputeId, bool _isBuyerWinner) public onlyOperator {
-        Dispute memory d = disputeById[_disputeId];
-        Order memory order = orderById[d.orderId];
-        Product memory product = productById[order.productId];
-        if(_isBuyerWinner) {
-            // Pay the product price to the buyer as a refund
-            HydroTokenTestnetInterface(token).transferFrom(product.owner, order.addressBuyer, product.price);
-        }
+        uint256 productId = getProductIdStorage(_disputeId);
+        Product memory product = productById[productId];
+
+        resolveDisputeStorage(_disputeId, token, product.owner, product.price, _isBuyerWinner);
     }
 
     /// @notice To add or delete operators by the owner
@@ -330,8 +405,7 @@ contract Store is Storage {
     /// @param _einOwner The EIN of the owner of those orders
     /// @return uint256 The number of orders to get
     function getOrdersLength(bytes32 _type, uint256 _einOwner) public view returns(uint256) {
-        if(_type == 'pending') return pendingOrders[_einOwner].length;
-        else if(_type == 'completed') return completedOrders[_einOwner].length;
+        return getOrdersLengthStorage(_type, _einOwner);
     }
 
     /// @notice To check if an operator exists

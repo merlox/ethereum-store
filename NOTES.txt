@@ -1,0 +1,32 @@
+/*
+DONE Create a SKU - assign a unique ID to a product
+- With ecommerce-dapp contract
+
+DONE Define attributes - define the attributes of the product to store on-chain, such as gender, size, color, materials
+- Attributes will be stored in an array of bytes32[] and the values will be bytes32[]. If it's a number, you simply convert it to string.
+
+DONE Inventory - add a SKU to a group of other SKUs to form the foundation of inventory management
+- Create an inventory struct containing products or use mappings or arrays
+
+DONE Shipping - define shipping parameters of the SKU or inventory
+- Create a shipping or order struct by using ecommerce-dapp
+
+DONE Price - define price of the SKU or inventory, accept gift cards and coupons from other Hydro Snowflake smart contracts
+- To be determined
+- We can't accept gift cards because the contract doesn't work with other contracts. Only the owner of the gift card can use it for himself. Gift cards are meant to be a transfer of tokens from a user to another, it can't be used as a payment system.
+
+DONE Create Order - create an order, tied to a Snowflake ID of a business and an end-user containing date, SKU info, shipping info
+- Can be done with ecommerce-dapp + IdentityRegistryInterface.identityExists(ein) +  IdentityRegistryInterface.hasIdentity(address) + IdentityRegistryInterface.getEIN(address)
+
+DONE Create Barcode - create a unique barcode tied to an order
+- Barcode js https://lindell.me/JsBarcode/
+
+DONE Authenticate Purchase - use Hydro Raindrop to confirm a purchase
+- The seller has a function to indicate that the products have been shipped and confirmed.
+
+DONE Authenticate Shipment - perform an authentication of the SKU(s) being sent and reduce from inventory
+- Reduce the inventory in the smart contract only
+
+DONE Dispute - create a flag on a Snowflake for a disputed order or shipment
+- After a user has purchased a product, he has the option to call the function disputeOrder() while providing a string explaining his situation. An event will be emitted and the seller will be able to call the function counterDisputeOrder() to provide an explanation of the situation. After that, an approved operator will be able to determine how's right. The seller is expected to provide the shipping tracking number.
+*/
