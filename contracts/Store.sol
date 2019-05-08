@@ -103,6 +103,8 @@ contract Dispute {
     mapping(uint256 => DisputeItem) public disputeById;
     DisputeItem[] public disputes;
     Store public store;
+    address[] public operators;
+    address public owner;
 
     modifier onlyOperator {
         require(operatorExists(msg.sender), 'Only a valid operator can run this function');
@@ -113,6 +115,7 @@ contract Dispute {
     /// @param _store The address of the store contract that will be used in this contract
     constructor(address _store) public {
         store = Store(_store);
+        owner = msg.sender;
     }
 
     /// @notice To dispute an order for the specified reason as a buyer
@@ -166,12 +169,30 @@ contract Dispute {
         }
     }
 
+    /// @notice To add or delete operators by the owner
+    /// @param _user A valid address to add or remove from the list of operators
+    /// @param _isRemoved Whether you want to add or remove this operator
+    function setOperator(address _user, bool _isRemoved) public {
+        require(msg.sender == owner, 'Only the owner can add operators');
+        if(_isRemoved) {
+            for(uint256 i = 0; i < operators.length; i++) {
+                if(operators[i] == _user) {
+                    address lastElement = operators[operators.length - 1];
+                    operators[i] = lastElement;
+                    operators.length--;
+                }
+            }
+        } else {
+            operators.push(_user);
+        }
+    }
+
     /// @notice To check if an operator exists
     /// @param _operator The address of the operator to check
     /// @return bool Whether he's a valid operator or not
     function operatorExists(address _operator) internal view returns(bool) {
-        for(uint256 i = 0; i < store.getOperatorsLength(); i++) {
-            if(_operator == store.operators(i)) {
+        for(uint256 i = 0; i < operators.length; i++) {
+            if(_operator == operators[i]) {
                 return true;
             }
         }
@@ -232,7 +253,6 @@ contract Store {
     mapping(uint256 => Address) public addressById;
     Product[] public products;
     Inventory[] public inventories;
-    address[] public operators;
     address public owner;
     uint256 public lastId;
     uint256 public lastOrderId;
@@ -371,24 +391,6 @@ contract Store {
         }
     }
 
-    /// @notice To add or delete operators by the owner
-    /// @param _user A valid address to add or remove from the list of operators
-    /// @param _isRemoved Whether you want to add or remove this operator
-    function setOperator(address _user, bool _isRemoved) public {
-        require(msg.sender == owner, 'Only the owner can add operators');
-        if(_isRemoved) {
-            for(uint256 i = 0; i < operators.length; i++) {
-                if(operators[i] == _user) {
-                    address lastElement = operators[operators.length - 1];
-                    operators[i] = lastElement;
-                    operators.length--;
-                }
-            }
-        } else {
-            operators.push(_user);
-        }
-    }
-
     /// @notice Returns the product length
     /// @return uint256 The number of products
     function getProductsLength() public view returns(uint256) {
@@ -402,12 +404,6 @@ contract Store {
     function getOrdersLength(bytes32 _type, uint256 _einOwner) public view returns(uint256) {
         if(_type == 'pending') return pendingOrders[_einOwner].length;
         else if(_type == 'completed') return completedOrders[_einOwner].length;
-    }
-
-    /// @notice Returns the operators length for getting each operator individually
-    /// @return Returns a number with the number of operators
-    function getOperatorsLength() public view returns(uint256) {
-        return operators.length;
     }
 
     /// @notice To get the ein owner of a product for the dispute contract

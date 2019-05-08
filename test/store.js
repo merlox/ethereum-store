@@ -15,9 +15,11 @@ contract('Store', accounts => {
         identityRegistry = await IdentityRegistry.new()
         store = await Store.new(token.address, identityRegistry.address)
         dispute = await Dispute.new(store.address)
-        console.log(token.address, identityRegistry.address)
     })
-    it('a', () => {
-
-    })
+    it('should create a product successfully')
+    it('should purchase a product successfully')
+    it('should delete a product successfully')
+    it('should create an inventory successfully')
+    it('should delete an inventory successfully')
+    it('should mark an order as completed')
 })
