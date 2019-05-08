@@ -116,6 +116,7 @@ contract Dispute {
     constructor(address _store) public {
         store = Store(_store);
         owner = msg.sender;
+        operators.push(msg.sender);
     }
 
     /// @notice To dispute an order for the specified reason as a buyer

@@ -1,3 +1,7 @@
+Run ganache-cli with 8.5 million gas for the testing with:
+
+    ganache-cli -l 0x81B320
+
 /*
 DONE Create a SKU - assign a unique ID to a product
 - With ecommerce-dapp contract
