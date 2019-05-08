@@ -65,7 +65,7 @@ interface IdentityRegistryInterface {
 contract Dispute {
     event DisputeGenerated(uint256 indexed id, uint256 indexed orderId, string reason);
 
-    struct Dispute {
+    struct DisputeItem {
         uint256 id;
         uint256 orderId;
         uint256 createdAt;
@@ -99,9 +99,9 @@ contract Dispute {
         uint256 barcode;
     }
 
-    // Dispute id => dispute struct
-    mapping(uint256 => Dispute) public disputeById;
-    Dispute[] public disputes;
+    // DisputeItem id => dispute struct
+    mapping(uint256 => DisputeItem) public disputeById;
+    DisputeItem[] public disputes;
     Store public store;
 
     modifier onlyOperator {
@@ -120,12 +120,12 @@ contract Dispute {
     /// @param _reason The string indicating why the buyer is disputing this order
     function disputeOrder(uint256 _id, string memory _reason) public {
         require(bytes(_reason).length > 0, 'The reason for disputing the order cannot be empty');
-        (uint256 id, addressId, productId, date, buyer, addressBuyer, state, barcode) = store.orderById(_id);
-        Order memory order = Order();
-        uint256 ein = IdentityRegistryInterface(store.identityRegistry).getEIN(msg.sender);
+        (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, string memory state, uint256 barcode) = store.orderById(_id);
+        Order memory order = Order(id, addressId, productId, date, buyer, addressBuyer, state, barcode);
+        uint256 ein = IdentityRegistryInterface(store.identityRegistry()).getEIN(msg.sender);
         require(order.buyer == ein, 'Only the buyer can dispute his order');
         uint256 disputeId = disputes.length;
-        Dispute memory d = Dispute(disputeId, _id, now, msg.sender, _reason, '', 'pending');
+        DisputeItem memory d = DisputeItem(disputeId, _id, now, msg.sender, _reason, '', 'pending');
         disputes.push(d);
         disputeById[disputeId] = d;
         emit DisputeGenerated(disputeId, _id, _reason);
@@ -136,11 +136,12 @@ contract Dispute {
     /// @param _counterReason The reason for countering the argument of the buyer
     function counterDispute(uint256 _disputeId, string memory _counterReason) public {
         require(bytes(_counterReason).length > 0, 'The counter reason must be set');
-        Dispute memory d = disputeById[_disputeId];
-        Order memory order = store.orderById(d.orderId);
-        Product memory product = store.productById(order.productId);
-        uint256 ein = IdentityRegistryInterface(store.identityRegistry).getEIN(msg.sender);
-        require(product.einOwner == ein, 'Only the seller can counter dispute this order');
+        DisputeItem memory d = disputeById[_disputeId];
+        (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, string memory state, uint256 barcode) = store.orderById(d.orderId);
+        Order memory order = Order(id, addressId, productId, date, buyer, addressBuyer, state, barcode);
+
+        uint256 ein = IdentityRegistryInterface(store.identityRegistry()).getEIN(msg.sender);
+        require(store.getProductEinOwner(order.productId) == ein, 'Only the seller can counter dispute this order');
         d.counterReason = _counterReason;
         d.state = 'countered';
         disputeById[_disputeId] = d;
@@ -156,12 +157,12 @@ contract Dispute {
     /// @param _disputeId The id of the dispute to resolve
     /// @param _isBuyerWinner If the winner is the buyer or not to perform the transfer
     function resolveDispute(uint256 _disputeId, bool _isBuyerWinner) public onlyOperator {
-        Dispute memory d = disputeById[_disputeId];
-        Order memory order = store.orderById(d.orderId);
-        Product memory product = store.productById(order.productId);
+        DisputeItem memory d = disputeById[_disputeId];
+        (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, string memory state, uint256 barcode) = store.orderById(d.orderId);
+
         if(_isBuyerWinner) {
             // Pay the product price to the buyer as a refund
-            HydroTokenTestnetInterface(store.token).transferFrom(product.owner, order.addressBuyer, product.price);
+            HydroTokenTestnetInterface(store.token()).transferFrom(store.getProductOwner(productId), addressBuyer, store.getProductPrice(productId));
         }
     }
 
@@ -405,7 +406,19 @@ contract Store {
 
     /// @notice Returns the operators length for getting each operator individually
     /// @return Returns a number with the number of operators
-    function getOperatorsLength() public returns(uint256) {
+    function getOperatorsLength() public view returns(uint256) {
         return operators.length;
+    }
+
+    function getProductEinOwner(uint256 _id) public view returns(uint256) {
+        return productById[_id].einOwner;
+    }
+
+    function getProductOwner(uint256 _id) public view returns(address) {
+        return productById[_id].owner;
+    }
+
+    function getProductPrice(uint256 _id) public view returns(uint256) {
+        return productById[_id].price;
     }
 }
