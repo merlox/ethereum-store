@@ -410,14 +410,23 @@ contract Store {
         return operators.length;
     }
 
+    /// @notice To get the ein owner of a product for the dispute contract
+    /// @param _id The id of the product
+    /// @return Returns the ein owner
     function getProductEinOwner(uint256 _id) public view returns(uint256) {
         return productById[_id].einOwner;
     }
 
+    /// @notice To get the address owner of a product for the dispute contract
+    /// @param _id The id of the product
+    /// @return Returns the address
     function getProductOwner(uint256 _id) public view returns(address) {
         return productById[_id].owner;
     }
 
+    /// @notice To get the price of a product for the dispute contract
+    /// @param _id The id of the product
+    /// @return Returns the price
     function getProductPrice(uint256 _id) public view returns(uint256) {
         return productById[_id].price;
     }
