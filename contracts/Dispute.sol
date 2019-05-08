@@ -1,5 +1,3 @@
-pragma solidity 0.5.0;
-
 contract Dispute {
     struct Dispute {
         uint256 id;
@@ -13,7 +11,12 @@ contract Dispute {
     // Dispute id => dispute struct
     mapping(uint256 => Dispute) public disputeById;
     Dispute[] public disputes;
-    
+
+    modifier onlyOperator {
+        require(operatorExists(msg.sender), 'Only a valid operator can run this function');
+        _;
+    }
+
     /// @notice To dispute an order for the specified reason as a buyer
     /// @param _id The order id to dispute
     /// @param _reason The string indicating why the buyer is disputing this order
@@ -61,5 +64,17 @@ contract Dispute {
             // Pay the product price to the buyer as a refund
             HydroTokenTestnetInterface(token).transferFrom(product.owner, order.addressBuyer, product.price);
         }
+    }
+
+    /// @notice To check if an operator exists
+    /// @param _operator The address of the operator to check
+    /// @return bool Whether he's a valid operator or not
+    function operatorExists(address _operator) internal view returns(bool) {
+        for(uint256 i = 0; i < operators.length; i++) {
+            if(_operator == operators[i]) {
+                return true;
+            }
+        }
+        return false;
     }
 }
