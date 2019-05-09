@@ -74,30 +74,6 @@ contract Dispute {
         string counterReason;
         bytes32 state; // Either pending, countered or resolved. Where pending indicates "waiting for the seller to respond", countered means "the seller has responded" and resolved is "the dispute has been resolved"
     }
-    struct Product {
-        uint256 id;
-        bytes32 sku;
-        string title;
-        string description;
-        uint256 date;
-        uint256 einOwner; // EIN owner
-        address owner;
-        uint256 price;
-        string image;
-        bytes32[] attributes;
-        bytes32[] attributeValues;
-        uint256 quantity;
-    }
-    struct Order {
-        uint256 id; // Unique order ID
-        uint256 addressId;
-        uint256 productId;
-        uint256 date;
-        uint256 buyer; // EIN buyer
-        address addressBuyer;
-        string state; // Either 'pending', 'completed'
-        uint256 barcode;
-    }
 
     // DisputeItem id => dispute struct
     mapping(uint256 => DisputeItem) public disputeById;
@@ -125,9 +101,8 @@ contract Dispute {
     function disputeOrder(uint256 _id, string memory _reason) public {
         require(bytes(_reason).length > 0, 'The reason for disputing the order cannot be empty');
         (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, string memory state, uint256 barcode) = store.orderById(_id);
-        Order memory order = Order(id, addressId, productId, date, buyer, addressBuyer, state, barcode);
         uint256 ein = IdentityRegistryInterface(store.identityRegistry()).getEIN(msg.sender);
-        require(order.buyer == ein, 'Only the buyer can dispute his order');
+        require(buyer == ein, 'Only the buyer can dispute his order');
         uint256 disputeId = disputes.length;
         DisputeItem memory d = DisputeItem(disputeId, _id, now, msg.sender, _reason, '', 'pending');
         disputes.push(d);
@@ -142,10 +117,9 @@ contract Dispute {
         require(bytes(_counterReason).length > 0, 'The counter reason must be set');
         DisputeItem memory d = disputeById[_disputeId];
         (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, string memory state, uint256 barcode) = store.orderById(d.orderId);
-        Order memory order = Order(id, addressId, productId, date, buyer, addressBuyer, state, barcode);
 
         uint256 ein = IdentityRegistryInterface(store.identityRegistry()).getEIN(msg.sender);
-        require(store.getProductEinOwner(order.productId) == ein, 'Only the seller can counter dispute this order');
+        require(store.getProductEinOwner(productId) == ein, 'Only the seller can counter dispute this order');
         d.counterReason = _counterReason;
         d.state = 'countered';
         disputeById[_disputeId] = d;

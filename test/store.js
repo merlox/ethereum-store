@@ -28,7 +28,7 @@ contract('Store', accounts => {
         const title = 'This is an example'
         const sku = bytes32('2384jd93nf')
         const description = 'This is the description of the product'
-        const price = 200
+        const price = web3.utils.toBN(200 * 1e18)
         const image = 'https://example.com'
         const attributes = [bytes32('size'), bytes32('color')]
         const attributeValues = [bytes32('s'), bytes32('m'), bytes32('x'), bytes32('red'), bytes32('blue'), bytes32('green')]
@@ -59,7 +59,8 @@ contract('Store', accounts => {
 
         // Buy the product
         await store.buyProduct(id, nameSurname, direction, city, stateRegion, postalCode, country, phone, barcode, {from: accounts[1]})
-        const order = await store.orderById(0)
+        const lastOrderId = await store.lastOrderId()
+        const order = await store.orderById(parseInt(lastOrderId) - 1)
         const product = await store.products(0)
 
         assert.equal(4, product.quantity, 'The product quantity must be reduced')
@@ -99,5 +100,41 @@ contract('Store', accounts => {
         } catch(e) {
             assert.ok(true) // Test passing as expected since we don't have an element 0 for that element that has been deleted
         }
+    })
+    it('should dispute an order', async () => {
+        // Create a product first
+        const title = 'This is an example'
+        const sku = bytes32('2384jd93nf')
+        const description = 'This is the description of the product'
+        let price = web3.utils.toBN(200 * 1e18)
+        const image = 'https://example.com'
+        const attributes = [bytes32('size'), bytes32('color')]
+        const attributeValues = [bytes32('s'), bytes32('m'), bytes32('x'), bytes32('red'), bytes32('blue'), bytes32('green')]
+        const quantity = 5
+        await store.publishProduct(title, sku, description, price, image, attributes, attributeValues, quantity)
+        let product = await store.products(0)
+        assert.equal(title, product.title, 'The product must be deployed with the publish function')
+
+        // Buy the product to create the order
+        const id = product.id
+        const nameSurname = 'Example Examp'
+        const direction = 'C/hs 248 sjdfs'
+        const city = bytes32('england') // England is my city ♫
+        const stateRegion = bytes32('englando')
+        const postalCode = 03214
+        const country = bytes32('england')
+        const phone = 38274619283
+        const barcode = 17236184923
+        price = web3.utils.toBN(200 * 1e18)
+        await token.transfer(accounts[1], price, {from: accounts[0]})
+        await token.approve(store.address, price, {from: accounts[1]})
+        await store.buyProduct(id, nameSurname, direction, city, stateRegion, postalCode, country, phone, barcode, {from: accounts[1]})
+        const lastOrderId = await store.lastOrderId()
+        const order = await store.orderById(parseInt(lastOrderId) - 1)
+        product = await store.products(0)
+        assert.equal(4, product.quantity, 'The product quantity must be reduced')
+        assert.equal(order.addressBuyer, accounts[1], 'The buyer must be set after creating the order')
+
+        // Dispute the order
     })
 })
