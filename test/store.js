@@ -141,4 +141,16 @@ contract('Store', accounts => {
         const disputeAdded = await dispute.disputes(0)
         assert.equal(disputeAdded.reason, reason, 'The dispute has to be created successfully')
     })
+    it('should counter dispute an existing dispute', async () => {
+        const disputeId = 0
+        const counterReason = 'bruh the product has been sent already'
+        await dispute.counterDispute(disputeId, counterReason)
+        const disputeItem = await dispute.disputes(0)
+        assert.equal(disputeItem.counterReason, counterReason, 'The counter reason has been added successfully')
+    })
+    it('should add an operator', async () => {
+        await dispute.setOperator(accounts[1], false, {from: accounts[0]})
+        const operator = await dispute.operators(1)
+        assert.equal(operator, accounts[1], 'The operator must be set')
+    })
 })
