@@ -135,6 +135,10 @@ contract('Store', accounts => {
         assert.equal(4, product.quantity, 'The product quantity must be reduced')
         assert.equal(order.addressBuyer, accounts[1], 'The buyer must be set after creating the order')
 
-        // Dispute the order
+        // Dispute the order, must be executed by the buyer accounts[1]
+        const reason = 'Because I want to'
+        await dispute.disputeOrder(parseInt(lastOrderId) - 1, reason, {from: accounts[1]})
+        const disputeAdded = await dispute.disputes(0)
+        assert.equal(disputeAdded.reason, reason, 'The dispute has to be created successfully')
     })
 })
