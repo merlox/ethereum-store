@@ -161,4 +161,12 @@ contract('Store', accounts => {
         const buyerTokenbalanceAfterWinning = parseInt(await token.balanceOf(accounts[1]))
         assert.equal(initialBuyerTokenBalance, buyerTokenbalanceAfterWinning, 'The balance must stay the same for the buyer since he didnt win the dispute')
     })
+    it('should resolve a dispute by an operator to select the buyer as the winner', async () => {
+        const disputeId = 0
+        const isBuyerWinner = true
+        const initialBuyerTokenBalance = parseInt(await token.balanceOf(accounts[1]))
+        await dispute.resolveDispute(disputeId, isBuyerWinner, {from: accounts[1]})
+        const buyerTokenbalanceAfterWinning = parseInt(await token.balanceOf(accounts[1]))
+        assert.equal(initialBuyerTokenBalance, buyerTokenbalanceAfterWinning, 'The balance must stay the same for the buyer since he didnt win the dispute')
+    })
 })

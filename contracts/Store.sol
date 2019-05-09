@@ -328,10 +328,14 @@ contract Store {
         pendingOrders[ein].push(newOrder);
         orderById[_id] = newOrder;
         addressById[lastAddressId] = newAddress;
-        HydroTokenTestnetInterface(token).transferFrom(msg.sender, p.owner, p.price); // Pay the product price to the seller
+        // TODO remember that the payment has been done to the store contract and not the seller yet
+        HydroTokenTestnetInterface(token).transferFrom(msg.sender, address(this), p.price); // Pay the product price to this contract
         lastOrderId++;
         lastAddressId++;
     }
+
+    // TODO Work on this
+    function receivePayment()
 
     /// @notice To mark an order as completed
     /// @param _id The id of the order to mark as sent and completed
