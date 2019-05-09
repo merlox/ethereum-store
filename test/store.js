@@ -153,4 +153,12 @@ contract('Store', accounts => {
         const operator = await dispute.operators(1)
         assert.equal(operator, accounts[1], 'The operator must be set')
     })
+    it('should resolve a dispute by an operator to select the seller as the winner', async () => {
+        const disputeId = 0
+        const isBuyerWinner = false
+        const initialBuyerTokenBalance = parseInt(await token.balanceOf(accounts[1]))
+        await dispute.resolveDispute(disputeId, isBuyerWinner, {from: accounts[1]})
+        const buyerTokenbalanceAfterWinning = parseInt(await token.balanceOf(accounts[1]))
+        assert.equal(initialBuyerTokenBalance, buyerTokenbalanceAfterWinning, 'The balance must stay the same for the buyer since he didnt win the dispute')
+    })
 })
