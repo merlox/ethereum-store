@@ -39,9 +39,34 @@ contract('Store', accounts => {
         const product = await store.products(0)
         assert.equal(title, product.title, 'The product must be deployed with the publish function')
     })
-    it('should purchase a product successfully')
-    it('should delete a product successfully')
+    it('should purchase a product successfully', async () => {
+        const id = 0
+        const nameSurname = 'Example Examp'
+        const direction = 'C/hs 248 sjdfs'
+        const city = bytes32('england') // England is my city ♫
+        const stateRegion = bytes32('englando')
+        const postalCode = 03214
+        const country = bytes32('england')
+        const phone = 38274619283
+        const barcode = 17236184923
+        const price = web3.utils.toBN(200 * 1e18)
+
+        // Give some tokens to the first user to purchase the product
+        await token.transfer(accounts[1], price, {from: accounts[0]})
+
+        // Allow some tokens to the contract
+        await token.approve(store.address, price, {from: accounts[1]})
+
+        // Buy the product
+        await store.buyProduct(id, nameSurname, direction, city, stateRegion, postalCode, country, phone, barcode, {from: accounts[1]})
+        const order = await store.orderById(0)
+        const product = await store.products(0)
+
+        assert.equal(4, product.quantity, 'The product quantity must be reduced')
+        assert.equal(order.addressBuyer, accounts[1], 'The buyer must be set after creating the order')
+    })
     it('should create an inventory successfully')
     it('should delete an inventory successfully')
+    it('should delete a product successfully')
     it('should mark an order as completed')
 })

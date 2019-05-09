@@ -342,6 +342,13 @@ contract Store {
         if(p.quantity > 0) {
             p.quantity--;
             productById[_id] = p;
+            // Update the products array
+            for(uint256 i = 0; i < products.length; i++) {
+                if(products[i].id == p.id) {
+                    products[i] = p;
+                    break;
+                }
+            }
         }
 
         pendingOrders[ein].push(newOrder);
