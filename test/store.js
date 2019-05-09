@@ -65,8 +65,39 @@ contract('Store', accounts => {
         assert.equal(4, product.quantity, 'The product quantity must be reduced')
         assert.equal(order.addressBuyer, accounts[1], 'The buyer must be set after creating the order')
     })
-    it('should create an inventory successfully')
-    it('should delete an inventory successfully')
-    it('should delete a product successfully')
-    it('should mark an order as completed')
+    it('should create an inventory successfully', async () => {
+        const name = 'my inventory'
+        const skus = [bytes32('askldui21'), bytes32('asdfasn3218')]
+
+        await store.createInventory(name, skus)
+        const inventory = await store.inventories(0)
+        assert.equal(inventory.name, name, 'The name of the inventory must be set when creating a new one')
+    })
+    it('should mark an order as completed', async () => {
+        const orderId = 0
+
+        await store.markOrderCompleted(orderId, {from: accounts[0]})
+        const order = await store.orderById(orderId)
+        assert.equal(order.state, 'completed', 'The order must be marked as completed')
+    })
+    it('should delete an inventory successfully', async () => {
+        const orderId = 0
+
+        await store.deleteInventory(orderId)
+        try {
+            const inventory = await store.inventories(orderId)
+        } catch(e) {
+            assert.ok(true) // Test passing as expected since we don't have an element 0 for that element that has been deleted
+        }
+    })
+    it('should delete a product successfully', async () => {
+        const productId = 0
+
+        await store.deleteProduct(productId)
+        try {
+            const product = await store.products(productId)
+        } catch(e) {
+            assert.ok(true) // Test passing as expected since we don't have an element 0 for that element that has been deleted
+        }
+    })
 })
