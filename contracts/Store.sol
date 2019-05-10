@@ -101,6 +101,7 @@ contract Dispute {
     function disputeOrder(uint256 _id, string memory _reason) public {
         require(bytes(_reason).length > 0, 'The reason for disputing the order cannot be empty');
         (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, string memory state, uint256 barcode) = store.orderById(_id);
+        require(now - date < 15 days, 'You can only dispute an order that has not been closed yet');
         uint256 ein = IdentityRegistryInterface(store.identityRegistry()).getEIN(msg.sender);
         require(buyer == ein, 'Only the buyer can dispute his order');
         uint256 disputeId = disputes.length;
@@ -136,11 +137,12 @@ contract Dispute {
     /// @param _isBuyerWinner If the winner is the buyer or not to perform the transfer
     function resolveDispute(uint256 _disputeId, bool _isBuyerWinner) public onlyOperator {
         DisputeItem memory d = disputeById[_disputeId];
+        require(bytes(d.counterReason).length > 0, 'The counter reason must be set');
         (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, string memory state, uint256 barcode) = store.orderById(d.orderId);
 
         if(_isBuyerWinner) {
             // Pay the product price to the buyer as a refund
-            HydroTokenTestnetInterface(store.token()).transferFrom(store.getProductOwner(productId), addressBuyer, store.getProductPrice(productId));
+            HydroTokenTestnetInterface(store.token()).transferFrom(address(store), addressBuyer, store.getProductPrice(productId));
         }
     }
 
@@ -198,7 +200,7 @@ contract Store {
         uint256 date;
         uint256 buyer; // EIN buyer
         address addressBuyer;
-        string state; // Either 'pending', 'completed'
+        string state; // Either 'pending', 'sent', 'completed' completed means that the seller has sent the product and he's extracted the payment
         uint256 barcode;
     }
     struct Address {
@@ -234,6 +236,7 @@ contract Store {
     uint256 public lastAddressId;
     address public token;
     address public identityRegistry;
+    address public disputeContract;
 
     /// @notice To setup the address of the ERC-721 token to use for this contract
     /// @param _token The token address
@@ -241,6 +244,15 @@ contract Store {
         owner = msg.sender;
         token = _token;
         identityRegistry = _identityRegistry;
+    }
+
+    /// @notice To set the address of the dispute contract for making disputes
+    /// @param _dispute The dispute address
+    function setDisputeAddress(address _dispute) public {
+        require(msg.sender == owner, 'Only the owner can set the dispute contract');
+        require(disputeContract == address(0), 'You cannot change the address of the contract once set');
+        require(_dispute != address(0), 'The dispute address cannot be empty');
+        disputeContract = _dispute;
     }
 
     /// @notice To publish a product as a seller
@@ -269,19 +281,6 @@ contract Store {
         require(_skus.length > 0, 'There must be at least one sku for this inventory');
         Inventory memory inv = Inventory(inventories.length, _name, _skus);
         inventories.push(inv);
-    }
-
-    /// @notice To delete an inventory by id
-    /// @param _id The id of the inventory to delete
-    function deleteInventory(uint256 _id) public {
-        // Delete the inventory from the array of inventories
-        for(uint256 i = 0; i < inventories.length; i++) {
-            if(inventories[i].id == _id) {
-                Inventory memory lastElement = inventories[inventories.length - 1];
-                inventories[i] = lastElement;
-                inventories.length--;
-            }
-        }
     }
 
     /// @notice To buy a new product, note that the seller must authorize this contract to manage the token
@@ -330,66 +329,45 @@ contract Store {
         addressById[lastAddressId] = newAddress;
         // TODO remember that the payment has been done to the store contract and not the seller yet
         HydroTokenTestnetInterface(token).transferFrom(msg.sender, address(this), p.price); // Pay the product price to this contract
+        HydroTokenTestnetInterface(token).approve(disputeContract, p.price);
         lastOrderId++;
         lastAddressId++;
     }
 
-    // TODO Work on this
-    function receivePayment()
+    /// @notice To receive payments for sellers that sold a product, each product must be checked independently. You can only do it after the product has been marked as sent and the
+    /// @param _orderId The ID of the order that you want to mark as completed and receie the payment
+    function receivePayment(uint256 _orderId) public {
+        Order memory order = orderById[_orderId];
+        Product memory p = productById[order.productId];
+        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
+        require(p.einOwner == ein, 'Only the seller can receive the payment of the order');
+        require(compareStrings(order.state, 'sent'), 'The order must be marked as sent to receive the payment');
+        require(now - order.date >= 15 days, 'You can only retrieve the payment after 15 days');
 
-    /// @notice To mark an order as completed
+        order.state = 'completed';
+        // Delete the seller order from the array of pending orders
+        for(uint256 i = 0; i < pendingOrders[p.einOwner].length; i++) {
+            if(pendingOrders[p.einOwner][i].id == _orderId) {
+                Order memory lastElement = orderById[pendingOrders[p.einOwner].length - 1];
+                pendingOrders[p.einOwner][i] = lastElement;
+                pendingOrders[p.einOwner].length--;
+            }
+        }
+        completedOrders[order.buyer].push(order);
+        orderById[_orderId] = order;
+        HydroTokenTestnetInterface(token).transfer(p.owner, p.price);
+    }
+
+    /// @notice To mark an order as sent
     /// @param _id The id of the order to mark as sent and completed
-    function markOrderCompleted(uint256 _id) public {
+    function markOrderSent(uint256 _id) public {
         Order memory order = orderById[_id];
         Product memory product = productById[order.productId];
         require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to mark the order as completed');
         uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
-        require(product.einOwner == ein, 'Only the seller can mark the order as completed');
-        order.state = 'completed';
-
-        // Delete the seller order from the array of pending orders
-        for(uint256 i = 0; i < pendingOrders[product.einOwner].length; i++) {
-            if(pendingOrders[product.einOwner][i].id == _id) {
-                Order memory lastElement = orderById[pendingOrders[product.einOwner].length - 1];
-                pendingOrders[product.einOwner][i] = lastElement;
-                pendingOrders[product.einOwner].length--;
-            }
-        }
-
-        completedOrders[order.buyer].push(order);
+        require(product.einOwner == ein, 'Only the seller can mark the order as sent');
+        order.state = 'sent';
         orderById[_id] = order;
-    }
-
-    /// @notice To delete a product
-    /// @param _id The id of the product to delete
-    function deleteProduct(uint256 _id) public {
-        require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to delete a product');
-        uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
-        require(productById[_id].einOwner == ein, 'You must be the owner to delete the product');
-        delete productById[_id];
-        // Delete the product from the array of products since we only want to purchase one product per order
-        for(uint256 i = 0; i < products.length; i++) {
-            if(products[i].id == _id) {
-                Product memory lastElement = products[products.length - 1];
-                products[i] = lastElement;
-                products.length--;
-            }
-        }
-    }
-
-    /// @notice Returns the product length
-    /// @return uint256 The number of products
-    function getProductsLength() public view returns(uint256) {
-        return products.length;
-    }
-
-    /// @notice To get the pending seller or buyer orders
-    /// @param _type If you want to get the pending seller, buyer or completed orders
-    /// @param _einOwner The EIN of the owner of those orders
-    /// @return uint256 The number of orders to get
-    function getOrdersLength(bytes32 _type, uint256 _einOwner) public view returns(uint256) {
-        if(_type == 'pending') return pendingOrders[_einOwner].length;
-        else if(_type == 'completed') return completedOrders[_einOwner].length;
     }
 
     /// @notice To get the ein owner of a product for the dispute contract
@@ -399,17 +377,18 @@ contract Store {
         return productById[_id].einOwner;
     }
 
-    /// @notice To get the address owner of a product for the dispute contract
-    /// @param _id The id of the product
-    /// @return Returns the address
-    function getProductOwner(uint256 _id) public view returns(address) {
-        return productById[_id].owner;
-    }
-
     /// @notice To get the price of a product for the dispute contract
     /// @param _id The id of the product
     /// @return Returns the price
     function getProductPrice(uint256 _id) public view returns(uint256) {
         return productById[_id].price;
+    }
+
+    /// @notice To compare strings
+    /// @param _a The first string
+    /// @param _b The second string
+    /// @return bool Whether it's the same or not
+    function compareStrings(string memory _a, string memory _b) internal pure returns(bool) {
+        return (keccak256(abi.encodePacked(_a)) == keccak256(abi.encodePacked(_b)));
     }
 }

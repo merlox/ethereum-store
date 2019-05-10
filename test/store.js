@@ -74,32 +74,12 @@ contract('Store', accounts => {
         const inventory = await store.inventories(0)
         assert.equal(inventory.name, name, 'The name of the inventory must be set when creating a new one')
     })
-    it('should mark an order as completed', async () => {
+    it('should mark an order as sent', async () => {
         const orderId = 0
 
-        await store.markOrderCompleted(orderId, {from: accounts[0]})
+        await store.markOrderSent(orderId, {from: accounts[0]})
         const order = await store.orderById(orderId)
-        assert.equal(order.state, 'completed', 'The order must be marked as completed')
-    })
-    it('should delete an inventory successfully', async () => {
-        const orderId = 0
-
-        await store.deleteInventory(orderId)
-        try {
-            const inventory = await store.inventories(orderId)
-        } catch(e) {
-            assert.ok(true) // Test passing as expected since we don't have an element 0 for that element that has been deleted
-        }
-    })
-    it('should delete a product successfully', async () => {
-        const productId = 0
-
-        await store.deleteProduct(productId)
-        try {
-            const product = await store.products(productId)
-        } catch(e) {
-            assert.ok(true) // Test passing as expected since we don't have an element 0 for that element that has been deleted
-        }
+        assert.equal(order.state, 'sent', 'The order must be marked as completed')
     })
     it('should dispute an order', async () => {
         // Create a product first
