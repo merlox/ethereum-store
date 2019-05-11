@@ -17,7 +17,7 @@ advanceTimeAndBlock = async (time) => {
 
 advanceTime = (time) => {
     return new Promise((resolve, reject) => {
-        web3.currentProvider.sendAsync({
+        web3.currentProvider.send({
             jsonrpc: "2.0",
             method: "evm_increaseTime",
             params: [time],
@@ -31,7 +31,7 @@ advanceTime = (time) => {
 
 advanceBlock = () => {
     return new Promise((resolve, reject) => {
-        web3.currentProvider.sendAsync({
+        web3.currentProvider.send({
             jsonrpc: "2.0",
             method: "evm_mine",
             id: new Date().getTime()
@@ -136,7 +136,7 @@ contract('Store', accounts => {
 
         await store.markOrderSent(orderId, {from: accounts[0]})
         order = await store.orderById(orderId)
-        assert.equal(web3.utils.toUtf8(order.state), 'sent', 'The order must be marked as completed')
+        assert.equal(web3.utils.toUtf8(order.state), 'sent', 'The order must be marked as sent')
     })
     it('should dispute an order', async () => {
         const results = await createOrder(accounts)
@@ -218,7 +218,7 @@ contract('Store', accounts => {
         assert.equal(initialBuyerTokenBalance + price, buyerTokenbalanceAfterWinning, 'The balance must increase by the price for the buyer after winning the dispute')
         assert.equal(web3.utils.toUtf8(disputeItem.state), 'resolved', 'The dispute must be marked as resolved')
     })
-    it.only('should not allow disputes after the period of 15 days', async () => {
+    it('should not allow disputes after the period of 15 days', async () => {
         const results = await createOrder(accounts)
         let order = results[0]
         const product = results[1]
@@ -235,6 +235,51 @@ contract('Store', accounts => {
             assert.ok(true, 'The order was reverted successfully')
         }
     })
-    it('the seller should be able to extract his funds after 15 days')
-    it('the seller should not be able to extract his order funds before 15 days')
+    it('the seller should be able to extract his funds after 15 days', async () => {
+        // Create the order
+        const results = await createOrder(accounts)
+        let order = results[0]
+        const product = results[1]
+        const initialTokenBalance = await token.balanceOf(accounts[0])
+        const price = web3.utils.toBN(200 * 1e18)
+
+        // Mark the order as sent
+        await store.markOrderSent(order.id, {from: accounts[0]})
+        order = await store.orderById(order.id)
+        assert.equal(web3.utils.toUtf8(order.state), 'sent', 'The order must be marked as sent')
+
+        // Wait 15 days for allowing disputes
+        const sixteenDays = 16 * 24 * 60 * 60 * 1e3
+        await advanceTimeAndBlock(sixteenDays)
+
+        // Receive the payment
+        await store.receivePayment(order.id, {from: accounts[0]})
+        const finalTokenBalance = await token.balanceOf(accounts[0])
+        order = await store.orderById(order.id)
+        // Check that the order has been marked as completed
+        assert.equal(web3.utils.toUtf8(order.state), 'completed', 'The order state must be set as completed')
+        // Check that the balance is increased after the payment
+        assert.equal(String(finalTokenBalance), String(initialTokenBalance.add(price)), 'The final balance of the seller has to be increased by the price')
+    })
+    it('the seller should not be able to extract his order funds before 15 days', async () => {
+        // Create the order
+        const results = await createOrder(accounts)
+        let order = results[0]
+        const product = results[1]
+        const initialTokenBalance = await token.balanceOf(accounts[0])
+        const price = web3.utils.toBN(200 * 1e18)
+
+        // Mark the order as sent
+        await store.markOrderSent(order.id, {from: accounts[0]})
+        order = await store.orderById(order.id)
+        assert.equal(web3.utils.toUtf8(order.state), 'sent', 'The order must be marked as sent')
+
+        // Receive the payment
+        try {
+            await store.receivePayment(order.id, {from: accounts[0]})
+            assert.ok(false, 'The transaction should revert to not allow payments before 15 days')
+        } catch(e) {
+            assert.ok(true, 'The transaction should revert to not allow payments before 15 days which is good')
+        }
+    })
 })
