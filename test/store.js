@@ -57,9 +57,10 @@ async function createProduct(accounts) {
     const attributes = [bytes32('size'), bytes32('color')]
     const attributeValues = [bytes32('s'), bytes32('m'), bytes32('x'), bytes32('red'), bytes32('blue'), bytes32('green')]
     const quantity = 5
+    const barcode = 214397912874
 
     // Create the product
-    await store.publishProduct(title, sku, description, price, image, attributes, attributeValues, quantity)
+    await store.publishProduct(title, sku, description, price, image, attributes, attributeValues, quantity, barcode)
     const lastProductId = await store.lastId()
     const product = await store.products(lastProductId - 1)
     return product
@@ -74,7 +75,6 @@ async function createOrder(accounts) {
     const postalCode = 03214
     const country = bytes32('england')
     const phone = 38274619283
-    const barcode = 17236184923
     const price = web3.utils.toBN(200 * 1e18)
 
     let product = await createProduct(accounts)
@@ -86,7 +86,7 @@ async function createOrder(accounts) {
     await token.approve(store.address, price, {from: accounts[1]})
 
     // Buy the product
-    await store.buyProduct(id, nameSurname, direction, city, stateRegion, postalCode, country, phone, barcode, {from: accounts[1]})
+    await store.buyProduct(id, nameSurname, direction, city, stateRegion, postalCode, country, phone, {from: accounts[1]})
     const lastOrderId = await store.lastOrderId()
     const order = await store.orderById(parseInt(lastOrderId) - 1)
     product = await store.products(id)

@@ -102,7 +102,7 @@ contract Dispute {
         require(bytes(_reason).length > 0, 'The reason for disputing the order cannot be empty');
         DisputeItem memory d = disputeById[_id];
         require(d.state == 0, 'The order state must be empty');
-        (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, bytes32 state, uint256 barcode) = store.orderById(_id);
+        (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, bytes32 state) = store.orderById(_id);
         require(now - date < 15 days, 'You can only dispute an order that has not been closed yet');
         uint256 ein = IdentityRegistryInterface(store.identityRegistry()).getEIN(msg.sender);
         require(buyer == ein, 'Only the buyer can dispute his order');
@@ -120,7 +120,7 @@ contract Dispute {
         require(bytes(_counterReason).length > 0, 'The counter reason must be set');
         DisputeItem memory d = disputeById[_disputeId];
         require(d.state == 'pending', 'The order state must be pending');
-        (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, bytes32 state, uint256 barcode) = store.orderById(d.orderId);
+        (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, bytes32 state) = store.orderById(d.orderId);
         require(now - date < 15 days, 'You can only dispute an order that has not been closed yet');
 
         uint256 ein = IdentityRegistryInterface(store.identityRegistry()).getEIN(msg.sender);
@@ -143,7 +143,7 @@ contract Dispute {
         DisputeItem memory d = disputeById[_disputeId];
         require(bytes(d.counterReason).length > 0, 'The counter reason must be set');
         require(d.state == 'countered', 'The order state must be countered');
-        (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, bytes32 state, uint256 barcode) = store.orderById(d.orderId);
+        (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, bytes32 state) = store.orderById(d.orderId);
         require(now - date < 15 days, 'You can only dispute an order that has not been closed yet');
 
         d.state = 'resolved';
@@ -207,6 +207,7 @@ contract Store {
         bytes32[] attributes;
         bytes32[] attributeValues;
         uint256 quantity;
+        uint256 barcode;
     }
     struct Order {
         uint256 id; // Unique order ID
@@ -216,7 +217,6 @@ contract Store {
         uint256 buyer; // EIN buyer
         address addressBuyer;
         bytes32 state; // Either 'pending', 'sent', 'completed' completed means that the seller has sent the product and he's extracted the payment
-        uint256 barcode;
     }
     struct Address {
         string nameSurname;
@@ -275,14 +275,14 @@ contract Store {
     /// @param _description The description of the product
     /// @param _price The price of the product in ETH
     /// @param _image The image URL of the product
-    function publishProduct(string memory _title, bytes32 _sku, string memory _description, uint256 _price, string memory _image, bytes32[] memory _attributes, bytes32[] memory _attributeValues, uint256 _quantity) public {
+    function publishProduct(string memory _title, bytes32 _sku, string memory _description, uint256 _price, string memory _image, bytes32[] memory _attributes, bytes32[] memory _attributeValues, uint256 _quantity, uint256 _barcode) public {
         require(bytes(_title).length > 0, 'The title cannot be empty');
         require(bytes(_description).length > 0, 'The description cannot be empty');
         require(_price > 0, 'The price cannot be empty');
         require(bytes(_image).length > 0, 'The image cannot be empty');
         require(IdentityRegistryInterface(identityRegistry).hasIdentity(msg.sender), 'You must have an EIN associated with your Ethereum account to add a product');
 
-        Product memory p = Product(lastId, _sku, _title, _description, now, IdentityRegistryInterface(identityRegistry).getEIN(msg.sender), msg.sender, _price, _image, _attributes, _attributeValues, _quantity);
+        Product memory p = Product(lastId, _sku, _title, _description, now, IdentityRegistryInterface(identityRegistry).getEIN(msg.sender), msg.sender, _price, _image, _attributes, _attributeValues, _quantity, _barcode);
         products.push(p);
         productById[lastId] = p;
         lastId++;
@@ -309,7 +309,7 @@ contract Store {
     /// @param _country Buyer's country
     /// @param _phone The optional phone number for the shipping company
     /// The payment in HYDRO is made automatically by making a transferFrom after approving the right amount of tokens using the product price
-    function buyProduct(uint256 _id, string memory _nameSurname, string memory _direction, bytes32 _city, bytes32 _stateRegion, uint256 _postalCode, bytes32 _country, uint256 _phone, uint256 _barcode) public {
+    function buyProduct(uint256 _id, string memory _nameSurname, string memory _direction, bytes32 _city, bytes32 _stateRegion, uint256 _postalCode, bytes32 _country, uint256 _phone) public {
         // The line 2 address and phone are optional, the rest are mandatory
         require(bytes(_nameSurname).length > 0, 'The name and surname must be set');
         require(bytes(_direction).length > 0, 'The line one direction must be set');
@@ -324,7 +324,7 @@ contract Store {
         require(bytes(p.title).length > 0, 'The product must exist to be purchased');
         require(HydroTokenTestnetInterface(token).allowance(msg.sender, address(this)) >= p.price, 'You must have enough HYDRO tokens approved to purchase this product');
         Address memory newAddress = Address(_nameSurname, _direction, _city, _stateRegion, _postalCode, _country, _phone);
-        Order memory newOrder = Order(lastOrderId, lastAddressId, _id, now, ein, msg.sender, 'pending', _barcode);
+        Order memory newOrder = Order(lastOrderId, lastAddressId, _id, now, ein, msg.sender, 'pending');
 
         // Update the quantity of remaining products
         if(p.quantity > 0) {
