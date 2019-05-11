@@ -100,6 +100,8 @@ contract Dispute {
     /// @param _reason The string indicating why the buyer is disputing this order
     function disputeOrder(uint256 _id, string memory _reason) public {
         require(bytes(_reason).length > 0, 'The reason for disputing the order cannot be empty');
+        Dispute memory d = disputeById(_id);
+        require(d.state == bytes(0), 'The order state must be empty');
         (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, string memory state, uint256 barcode) = store.orderById(_id);
         require(now - date < 15 days, 'You can only dispute an order that has not been closed yet');
         uint256 ein = IdentityRegistryInterface(store.identityRegistry()).getEIN(msg.sender);
@@ -117,7 +119,9 @@ contract Dispute {
     function counterDispute(uint256 _disputeId, string memory _counterReason) public {
         require(bytes(_counterReason).length > 0, 'The counter reason must be set');
         DisputeItem memory d = disputeById[_disputeId];
+        require(d.state == 'pending', 'The order state must be pending');
         (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, string memory state, uint256 barcode) = store.orderById(d.orderId);
+        require(now - date < 15 days, 'You can only dispute an order that has not been closed yet');
 
         uint256 ein = IdentityRegistryInterface(store.identityRegistry()).getEIN(msg.sender);
         require(store.getProductEinOwner(productId) == ein, 'Only the seller can counter dispute this order');
@@ -138,7 +142,18 @@ contract Dispute {
     function resolveDispute(uint256 _disputeId, bool _isBuyerWinner) public onlyOperator {
         DisputeItem memory d = disputeById[_disputeId];
         require(bytes(d.counterReason).length > 0, 'The counter reason must be set');
+        require(d.state == 'countered', 'The order state must be countered');
         (uint256 id, uint256 addressId, uint256 productId, uint256 date, uint256 buyer, address addressBuyer, string memory state, uint256 barcode) = store.orderById(d.orderId);
+        require(now - date < 15 days, 'You can only dispute an order that has not been closed yet');
+
+        d.state = 'resolved';
+        disputeById[_disputeId] = d;
+        for(uint256 i = 0; i < disputes.length; i++) {
+            if(disputes[i].id == _disputeId) {
+                disputes[i] = d;
+                break;
+            }
+        }
 
         if(_isBuyerWinner) {
             // Pay the product price to the buyer as a refund
@@ -200,7 +215,7 @@ contract Store {
         uint256 date;
         uint256 buyer; // EIN buyer
         address addressBuyer;
-        string state; // Either 'pending', 'sent', 'completed' completed means that the seller has sent the product and he's extracted the payment
+        bytes32 state; // Either 'pending', 'sent', 'completed' completed means that the seller has sent the product and he's extracted the payment
         uint256 barcode;
     }
     struct Address {
@@ -341,7 +356,7 @@ contract Store {
         Product memory p = productById[order.productId];
         uint256 ein = IdentityRegistryInterface(identityRegistry).getEIN(msg.sender);
         require(p.einOwner == ein, 'Only the seller can receive the payment of the order');
-        require(compareStrings(order.state, 'sent'), 'The order must be marked as sent to receive the payment');
+        require(order.state == 'sent', 'The order must be marked as sent to receive the payment');
         require(now - order.date >= 15 days, 'You can only retrieve the payment after 15 days');
 
         order.state = 'completed';
@@ -382,13 +397,5 @@ contract Store {
     /// @return Returns the price
     function getProductPrice(uint256 _id) public view returns(uint256) {
         return productById[_id].price;
-    }
-
-    /// @notice To compare strings
-    /// @param _a The first string
-    /// @param _b The second string
-    /// @return bool Whether it's the same or not
-    function compareStrings(string memory _a, string memory _b) internal pure returns(bool) {
-        return (keccak256(abi.encodePacked(_a)) == keccak256(abi.encodePacked(_b)));
     }
 }
