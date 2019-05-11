@@ -282,4 +282,4 @@ contract('Store', accounts => {
             assert.ok(true, 'The transaction should revert to not allow payments before 15 days which is good')
         }
     })
-})
+}) // All tests passing
